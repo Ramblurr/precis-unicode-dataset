@@ -7,9 +7,11 @@
                    :task download/-main}
 
          extract {:doc "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
+                  :depends [download]
                   :task extract/-main}
 
          generate {:doc "Generate PRECIS property tables using RFC 8264 algorithm from Unicode data"
+                   :depends [extract]
                    :task generate/-main}
 
          verify {:doc "Verify generated tables match extracted reference datasets using diff -w"

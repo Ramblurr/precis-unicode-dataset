@@ -85,8 +85,8 @@
         (let [iana-data (load-iana-csv iana-file)
               iana-mappings (expand-iana-ranges-to-codepoints iana-data)
 
-              _ (println "Generating our PRECIS mappings for Unicode 6.3.0...")
-              our-mappings (generate-complete-precis-mappings)
+              mappings-file (str tables-new-dir "/precis-mappings-6.3.0.edn")
+              our-mappings (read-string (slurp mappings-file))
 
               all-cps (set (concat (keys iana-mappings) (keys our-mappings)))
 

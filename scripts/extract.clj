@@ -17,7 +17,7 @@
   (let [context (str/join " " (take-last 15 lines-before))]
     (cond
       (str/includes? context "Changes from derived property value UNASSIGNED") "from-unassigned"
-      (str/includes? context "Changes from derived property value ID_DIS or FREE_PVAL to PVALID") "id-dis-to-pvalid"
+      ;; (str/includes? context "Changes from derived property value ID_DIS or FREE_PVAL to PVALID") "id-dis-to-pvalid"
       (str/includes? context "Changes from derived property value") "property-changes"
       :else "from-unassigned"))) ; Default to from-unassigned since that's most common
 
