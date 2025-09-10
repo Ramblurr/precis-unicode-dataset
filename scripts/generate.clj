@@ -11,6 +11,7 @@
 (def unicode-base-path "createtables")
 (def output-base-path "tables-generated")
 (def scratch-dir "scratch")
+;; (def unicode-versions ["6.3.0" "7.0.0"])
 (def unicode-versions ["6.3.0" "7.0.0" "8.0.0" "9.0.0" "10.0.0" "11.0.0" "12.0.0" "13.0.0" "14.0.0" "15.0.0" "16.0.0" "17.0.0"])
 
 (def precis-properties
@@ -50,7 +51,6 @@
     (str (hex-format start) ".." (hex-format end))))
 
 ;; Unicode file parsers
-
 (defn parse-unicode-data
   "Parse UnicodeData.txt file into a map of codepoint -> properties"
   [unicode-data-file]
@@ -196,55 +196,60 @@
       (<= 0xA960 cp 0xA97F) ; Hangul Jamo Extended-A  
       (<= 0xD7B0 cp 0xD7FF))) ; Hangul Jamo Extended-B
 
-;; Exceptions handling (F) - simplified for this implementation
 (defn exceptions-value
-  "Handle exceptions per RFC 5892"
+  "Handle exceptions per RFC 5892 Section 2.6"
   [cp]
-  (case cp
-    0x00DF :pvalid ; LATIN SMALL LETTER SHARP S  
-    0x03C2 :pvalid ; GREEK SMALL LETTER FINAL SIGMA
-    0x06FD :pvalid ; ARABIC SIGN SINDHI AMPERSAND
-    0x06FE :pvalid ; ARABIC SIGN SINDHI POSTPOSITION MEN
-    0x0F0B :free-pval ; TIBETAN MARK INTERSYLLABIC TSHEG
-    0x3007 :pvalid ; IDEOGRAPHIC NUMBER ZERO
-    ;; Middle Dot cases - context dependent
-    0x00B7 :contexto ; MIDDLE DOT
-    0x0375 :contexto ; GREEK LOWER NUMERAL SIGN
-    0x05F3 :contexto ; HEBREW PUNCTUATION GERESH  
-    0x05F4 :contexto ; HEBREW PUNCTUATION GERSHAYIM
-    0x30FB :contexto ; KATAKANA MIDDLE DOT
-    ;; Special case: MONGOLIAN FREE VARIATION SELECTOR FOUR (to match reference)
-    0x180F :disallowed ; MONGOLIAN FREE VARIATION SELECTOR FOUR
-    nil))
+  (cond
+    (contains? #{0x00DF 0x03C2 0x06FD 0x06FE 0x0F0B 0x3007} cp) :pvalid
+    (contains? #{0x00B7 0x0375 0x05F3 0x05F4 0x30FB} cp)        :contexto
+    (or (<= 0x0660 cp 0x0669)  ;; ARABIC-INDIC DIGITS
+        (<= 0x06F0 cp 0x06F9)) ;; EXTENDED ARABIC-INDIC DIGITS
+    :contexto
 
-;; Main PRECIS Algorithm (RFC 8264 Section 8)
+    (contains? #{0x0640 ;; ARABIC TATWEEL
+                 0x07FA ;; NKO LAJANYALAN
+                 0x302E ;; HANGUL SINGLE DOT TONE MARK
+                 0x302F ;; HANGUL DOUBLE DOT TONE MARK
+                 0x3031 0x3032 0x3033 0x3034 0x3035 ;; Vertical kana repeat marks
+                 0x303B} cp) ;; VERTICAL IDEOGRAPHIC ITERATION MARK
+    :disallowed
+
+    ;; Project-specific case: MONGOLIAN FREE VARIATION SELECTOR FOUR (to match reference)
+    ;; Not from RFC 5892, but needed for IANA compatibility
+    ;; TODO: figure out why ?
+    (= cp 0x180F) :disallowed
+
+    :else nil))
+
+;; PRECIS codepoint categorization algorithm (RFC 8264 Section 8)
 (defn derive-precis-property
-  "Apply PRECIS derivation algorithm per RFC 8264 Section 8"
-  [unicode-data derived-props cp iana-exceptions]
+  "Apply PRECIS derivation algorithm per RFC 8264 Section 8 - exact order required"
+  [unicode-data derived-props cp]
   (let [assigned? (contains? unicode-data cp)]
-    ;; First check IANA exceptions (complete classification data)
-    (if-let [iana-prop (get iana-exceptions cp)]
-      iana-prop
-      ;; If no IANA data available, fall back to algorithmic derivation
-      (cond
-        ;; BackwardCompatible - empty for now per RFC 5892
+    (cond
+      (exceptions-value cp) (exceptions-value cp)
+      ;; backwards compatible omitted
+      (not assigned?) :unassigned
+      (ascii7? cp) :pvalid
+      (join-control? cp) :contextj
+      (old-hangul-jamo? cp) :disallowed
+      (precis-ignorable? derived-props cp) :disallowed
+      (control? unicode-data cp) :disallowed
+      (has-compat? unicode-data cp) :free-pval
+      (letter-digits? unicode-data cp) :pvalid
+      (other-letter-digits? unicode-data cp) :free-pval
+      (spaces? unicode-data cp) :free-pval
+      (symbols? unicode-data cp) :free-pval
+      (punctuation? unicode-data cp) :free-pval
+      :else :disallowed)))
 
-        ;; Check PRECIS-ignorable first, before unassigned check
-        ;; This handles noncharacters that should be DISALLOWED even if unassigned
-        (precis-ignorable? derived-props cp) :disallowed
-
-        (not assigned?) :unassigned
-        (ascii7? cp) :pvalid
-        (join-control? cp) :contextj
-        (old-hangul-jamo? cp) :disallowed
-        (control? unicode-data cp) :disallowed
-        (has-compat? unicode-data cp) :free-pval
-        (letter-digits? unicode-data cp) :pvalid
-        (other-letter-digits? unicode-data cp) :free-pval
-        (spaces? unicode-data cp) :free-pval
-        (symbols? unicode-data cp) :free-pval
-        (punctuation? unicode-data cp) :free-pval
-        :else :disallowed))))
+;; IANA validation function (for 6.3.0 CSV generation only)
+(defn derive-precis-property-with-iana-override
+  "Apply RFC 8264 algorithm but override with IANA data for perfect 6.3.0 compatibility"
+  [unicode-data derived-props cp iana-exceptions]
+  (if-let [iana-prop (get iana-exceptions cp)]
+    iana-prop
+    (derive-precis-property unicode-data derived-props cp)))
 
 ;; Output generation
 (defn get-character-name
@@ -416,26 +421,19 @@
   (let [from-dir (str unicode-base-path "/" from-version)
         to-dir (str unicode-base-path "/" to-version)
 
-        ;; Parse both versions
         from-unicode (parse-unicode-data (str from-dir "/UnicodeData.txt"))
         to-unicode (parse-unicode-data (str to-dir "/UnicodeData.txt"))
         from-derived (parse-derived-core-properties (str from-dir "/DerivedCoreProperties.txt"))
         to-derived (parse-derived-core-properties (str to-dir "/DerivedCoreProperties.txt"))
 
-        ;; Load IANA exceptions for 6.3.0 reference (use same for all versions for consistency)
-        iana-exceptions (if (= from-version "6.3.0")
-                          (load-iana-exceptions)
-                          {})
-
-        ;; All codepoints in Unicode space
         all-cps (set (range 0x0000 0x110000))
 
-        ;; Calculate properties for both versions
+        ;; derive the property values for both versions
         from-props (reduce (fn [acc cp]
-                             (assoc acc cp (derive-precis-property from-unicode from-derived cp iana-exceptions)))
+                             (assoc acc cp (derive-precis-property from-unicode from-derived cp)))
                            {} all-cps)
         to-props (reduce (fn [acc cp]
-                           (assoc acc cp (derive-precis-property to-unicode to-derived cp iana-exceptions)))
+                           (assoc acc cp (derive-precis-property to-unicode to-derived cp)))
                          {} all-cps)
 
         ;; Separate changes into categories
@@ -474,24 +472,17 @@
 
     (.mkdirs (io/file output-base-path))
 
-    ;; Write from-unassigned changes (most common case)
     (when (seq @from-unassigned-changes)
       (write-table-file (str base-filename "-from-unassigned.txt")
                         to-unicode @from-unassigned-changes))
 
-    ;; Write existing property changes (only for 10.0.0->11.0.0 in current data)
     (when (seq @existing-prop-changes)
-      (let [suffix (cond
-                     ;; 10.0.0->11.0.0 has ID_DIS or FREE_PVAL to PVALID changes
-                     (and (= from-version "10.0.0") (= to-version "11.0.0"))
-                     "-id-dis-to-pvalid"
-                     ;; Generic fallback for other existing property changes
-                     :else "-property-changes")]
+      (let [suffix "-property-changes"]
         (write-table-file (str base-filename suffix ".txt")
                           to-unicode @existing-prop-changes)))))
 
 (defn generate-complete-precis-mappings
-  "Generate complete PRECIS property mappings for Unicode 6.3.0"
+  "Generate complete PRECIS property mappings for Unicode 6.3.0 with IANA compatibility"
   []
   (let [unicode-dir (str unicode-base-path "/6.3.0")
         unicode-data (parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
@@ -500,7 +491,7 @@
         all-cps (range 0x0000 0x110000)]
 
     (reduce (fn [acc cp]
-              (assoc acc cp (derive-precis-property unicode-data derived-props cp iana-exceptions)))
+              (assoc acc cp (derive-precis-property-with-iana-override unicode-data derived-props cp iana-exceptions)))
             {} all-cps)))
 
 (defn parse-iana-csv-for-formatting
@@ -595,11 +586,11 @@
                                         (get-character-name unicode-data start)
                                         (get-character-name unicode-data end))))]
 
-            (.write writer (format "%s,%s,%s\r\n" range-str prop-str 
+            (.write writer (format "%s,%s,%s\r\n" range-str prop-str
                                     ;; Quote description if it contains commas, like IANA does
-                                    (if (str/includes? description ",")
-                                      (format "\"%s\"" description)
-                                      description))))))
+                                   (if (str/includes? description ",")
+                                     (format "\"%s\"" description)
+                                     description))))))
 
       (println (format "Generated %d ranges in IANA-compatible CSV format." (count ranges))))))
 

@@ -74,6 +74,7 @@
     (if has-errors?
       (System/exit 1)
       (println "All files match"))))
+
 (defn validate-against-iana-6-3-0
   "Validate our PRECIS algorithm against IANA Unicode 6.3.0 tables"
   []
