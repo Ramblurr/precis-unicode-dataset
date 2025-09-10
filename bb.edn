@@ -1,0 +1,21 @@
+{:paths ["scripts"]
+ :deps {}
+ :tasks {:requires ([babashka.fs :as fs])
+         extract {:doc "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
+                  :task extract/-main}
+
+         generate {:doc "Generate PRECIS property tables using RFC 8264 algorithm from Unicode data"
+                   :task generate/-main}
+
+         verify {:doc "Verify generated tables match extracted reference datasets using diff -w"
+                 :task verify/-main}
+
+         report {:doc "Generate analysis report of PRECIS property changes across Unicode versions"
+                 :task report/-main}
+
+         clean {:doc "Remove all generated directories (tables-extracted, tables-generated, scratch, data)"
+                :task (do
+                        (fs/delete-tree "tables-extracted")
+                        (fs/delete-tree "tables-generated")
+                        (fs/delete-tree "scratch")
+                        (fs/delete-tree "data"))}}}
