@@ -1,6 +1,11 @@
 {:paths ["scripts"]
  :deps {}
  :tasks {:requires ([babashka.fs :as fs])
+         submodules (shell "git submodule update --init --recursive")
+         download {:doc "Download Unicode data files, IANA tables, and other required reference sources"
+                   :depends [submodules]
+                   :task download/-main}
+
          extract {:doc "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
                   :task extract/-main}
 
