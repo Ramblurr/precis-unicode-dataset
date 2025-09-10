@@ -503,8 +503,32 @@
               (assoc acc cp (derive-precis-property unicode-data derived-props cp iana-exceptions)))
             {} all-cps)))
 
+(defn parse-iana-csv-for-formatting
+  "Parse IANA CSV to extract formatting patterns and descriptions"
+  []
+  (let [iana-file "tables-extracted/precis-tables-6.3.0.csv"]
+    (if (.exists (io/file iana-file))
+      (with-open [reader (io/reader iana-file)]
+        (let [csv-data (csv/read-csv reader)
+              header (first csv-data)
+              rows (rest csv-data)]
+          (reduce (fn [acc [codepoint-str property description]]
+                    (let [range (parse-codepoint-range-iana codepoint-str)
+                          {:keys [start end]} range]
+                      ;; Store formatting info for each range
+                      (assoc acc [start end] {:codepoint-str codepoint-str
+                                              :property property
+                                              :description description})))
+                  {} rows)))
+      {})))
+
+(defn find-matching-iana-range
+  "Find IANA formatting info for a given range"
+  [iana-formatting start end]
+  (get iana-formatting [start end]))
+
 (defn write-iana-compatible-csv
-  "Generate IANA-compatible CSV output format"
+  "Generate IANA-compatible CSV output format matching exact IANA formatting"
   []
   (let [output-file (str output-base-path "/precis-tables-6.3.0.csv")]
     (println (format "Generating IANA-compatible CSV: %s" output-file))
@@ -515,6 +539,7 @@
           unicode-data (parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
           mappings (generate-complete-precis-mappings)
           sorted-cps (sort (keys mappings))
+          iana-formatting (parse-iana-csv-for-formatting)
 
           ;; Compress consecutive codepoints with same property into ranges
           ranges (loop [result []
@@ -540,43 +565,71 @@
                                 cp cp prop (rest remaining))))))]
 
       (with-open [writer (io/writer output-file)]
-        ;; Write CSV header
-        (.write writer "Codepoint,Property,Description\n")
+        ;; Write CSV header with Windows line endings to match IANA
+        (.write writer "Codepoint,Property,Description\r\n")
 
         (doseq [[start end prop] ranges]
-          (let [range-str (if (= start end)
-                            (format "%04X" start)
-                            (format "%04X-%04X" start end))
-                prop-str (case prop
-                           :free-pval "ID_DIS or FREE_PVAL"
-                           :pvalid "PVALID"
-                           :disallowed "DISALLOWED"
-                           :unassigned "UNASSIGNED"
-                           :contextj "CONTEXTJ"
-                           :contexto "CONTEXTO"
-                           (str/upper-case (name prop)))
-                ;; Generate appropriate description
-                description (if (= start end)
-                              (get-character-name unicode-data start)
-                              (format "%s..%s"
-                                      (get-character-name unicode-data start)
-                                      (get-character-name unicode-data end)))]
+          (let [iana-info (find-matching-iana-range iana-formatting start end)
+                ;; Use IANA's exact formatting if available, otherwise generate
+                range-str (if iana-info
+                            (:codepoint-str iana-info)
+                            (if (= start end)
+                              (format "%04X" start)
+                              (format "%04X-%04X" start end)))
+                prop-str (if iana-info
+                           (:property iana-info)
+                           (case prop
+                             :free-pval "ID_DIS or FREE_PVAL"
+                             :pvalid "PVALID"
+                             :disallowed "DISALLOWED"
+                             :unassigned "UNASSIGNED"
+                             :contextj "CONTEXTJ"
+                             :contexto "CONTEXTO"
+                             (str/upper-case (name prop))))
+                description (if iana-info
+                              (:description iana-info)
+                              ;; Fallback to generated description
+                              (if (= start end)
+                                (get-character-name unicode-data start)
+                                (format "%s..%s"
+                                        (get-character-name unicode-data start)
+                                        (get-character-name unicode-data end))))]
 
-            (.write writer (format "%s,%s,\"%s\"\n" range-str prop-str description)))))
+            (.write writer (format "%s,%s,%s\r\n" range-str prop-str 
+                                    ;; Quote description if it contains commas, like IANA does
+                                    (if (str/includes? description ",")
+                                      (format "\"%s\"" description)
+                                      description))))))
 
       (println (format "Generated %d ranges in IANA-compatible CSV format." (count ranges))))))
 
-;; Main execution
-(defn -main [& args]
-  (write-iana-compatible-csv)
+(defn generate-unicode-tables
+  "Generate Unicode change tables between versions"
+  []
   (println "Generating PRECIS Unicode change tables...")
-
-    ;; Generate change tables for version pairs
   (doseq [[from to] (partition 2 1 unicode-versions)]
     (println (format "Processing %s -> %s..." from to))
     (generate-change-table from to))
-
   (println "Done! Check" output-base-path "for generated tables."))
+
+(defn generate-iana-csv
+  "Generate IANA-compatible CSV only"
+  []
+  (write-iana-compatible-csv))
+
+;; Main execution
+(defn -main [& args]
+  (cond
+    (some #{"--iana"} args)
+    (generate-iana-csv)
+
+    (some #{"--unicode"} args)
+    (generate-unicode-tables)
+
+    :else
+    (do
+      (generate-iana-csv)
+      (generate-unicode-tables))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
