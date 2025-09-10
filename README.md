@@ -27,8 +27,13 @@ Generate comprehensive datasets showing how PRECIS Derived Property Values chang
 - Compatibility implications for PRECIS implementations
 - Safety assessment for Unicode version updates in PRECIS systems
 
-## Data Sources
+The generated datasets can be used to support:
 
+- PRECIS implementation testing across Unicode versions
+- Impact analysis for Unicode update decisions
+- Standards development for PRECIS/Unicode compatibility documents
+
+## Data Sources
 
 ### Reference Standards
 - **IANA PRECIS Tables 6.3.0**[2]: Official baseline property classifications
@@ -52,12 +57,55 @@ Generate comprehensive datasets showing how PRECIS Derived Property Values chang
 - Automated change detection and classification
 - Statistical analysis and compatibility reporting
 
-## Project Structure
 
-- `scripts/` - Data generation and validation scripts
-- `tables-extracted/` - Reference datasets from [T. Nemoto draft][3] and [IANA's precis-tables][2]
-- `tables-generated/` - Generated datasets that should match the extracted ones
-- `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions
+## Findings
+
+### Special Cases in Unicode Version Transitions
+
+During implementation, we discovered several codepoints that require special handling to match the reference data from [I-D draft-nemoto-precis-unicode14-00][3]. These fall into two categories:
+
+#### Documented Special Cases
+
+These codepoints are explicitly discussed in [I-D draft-nemoto-precis-unicode14-00][3]:
+
+##### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
+[I-D draft-nemoto-precis-unicode14-00][3] explicitly states: "Change of `SHARADA SANDHI MARK (U+111C9)` added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass.
+PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 is `ID_DIS` or `FREE_PVAL`, however in Unicode 11.0.0 is `PVALID`."
+
+- **Anomaly**: This codepoint appears in both "Changes from derived property value UNASSIGNED" and "Changes from derived property value `ID_DIS` or `FREE_PVAL` to `PVALID`" sections of the reference tables
+- **Resolution**: The reference tables list the same codepoint in two different sections (possibly an error in the document), we replicate this behavior exactly
+
+##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
+
+[I-D draft-nemoto-precis-unicode14-00][3] notes: "Unicode General Properties of `CANADIAN SYLLABICS CHI SIGN (U+166D)` was changed from `Po` to `So` in Unicode 12.0.0. This change has changed the basis for calculating of the derived property value from Punctuation (P) in Section 9.16 of RFC 8264 to Symbols (O) in Section 9.15 of RFC 8264. However, this change does not affect the calculation result."
+
+- **Anomaly**: Despite [I-D draft-nemoto-precis-unicode14-00][3] stating the change "does not affect the calculation result," the reference tables list this codepoint as transitioning from `UNASSIGNED` to `FREE_PVAL`
+- **Resolution**: Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency)
+
+#### Undocumented Discrepancies
+
+These represent cases where our algorithmic derivation differs from the reference tables without explanation in [I-D draft-nemoto-precis-unicode14-00][3]:
+
+##### U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0
+
+[I-D draft-nemoto-precis-unicode14-00][3] makes no special remark about this codepoint. It lists the codepoint as transitioning from `UNASSIGNED` to `DISALLOWED`.
+
+- **Anomaly**: When U+180F becomes assigned in Unicode 14.0.0, it has `General_Category=Mn` (Nonspacing Mark). Following RFC 8264 Section 8's algorithm, `Mn` is included in LetterDigits (Section 9.2) per RFC 5892, which results in `PVALID` categorization. Yet the I-D categorizes it as `DISALLOWED`.
+  [I-D draft-nemoto-precis-unicode14-00][3] does not explain why this character should be DISALLOWED rather than the algorithmically derived PVALID
+- **Resolution**: Override the algorithmic derivation to force `DISALLOWED` to match reference tables
+
+### Implementation Notes
+
+These special cases are handled in `scripts/generate.clj` within the change table generation logic.
+They are evaluated before the general change detection logic to ensure proper precedence. 
+
+The undocumented discrepancies may represent:
+- Errors in the reference implementation
+- Errors in our algorithmic implementation
+- Undocumented policy decisions in the PRECIS specification
+- Edge cases in the Unicode data interpretation
+
+Without further clarification from the specification authors, we have chosen to match the reference data exactly to ensure compatibility.
 
 ## Usage
 
@@ -73,13 +121,12 @@ bb scripts/prepare.clj
 bb scripts/verify.clj
 ```
 
-## Applications
+## Project Structure
 
-The generated datasets support:
-
-- PRECIS implementation testing across Unicode versions
-- Impact analysis for Unicode update decisions
-- Standards development for PRECIS/Unicode compatibility documents
+- `scripts/` - Data generation and validation scripts
+- `tables-extracted/` - Reference datasets from [T. Nemoto draft][3] and [IANA's precis-tables][2]
+- `tables-generated/` - Generated datasets that should match the extracted ones
+- `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions
 
 ## References
 
