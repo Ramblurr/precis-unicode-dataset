@@ -121,7 +121,7 @@
             (println (format "  %s: %d" prop count)))
 
           (if (zero? @mismatches)
-            (println "\n✅ PERFECT MATCH! Our PRECIS algorithm is 100% accurate.")
+            (println "\n✅ PERFECT MATCH!")
             (do
               (println (format "\n❌ Found %d discrepancies. Algorithm needs debugging." @mismatches))
 
