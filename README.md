@@ -43,33 +43,21 @@ The generated datasets can be used to support:
 - Complete property mappings for each Unicode version
 - Version-to-version change tables showing property transitions
 - Statistical summaries of character classification changes
-- Machine-readable formats (CSV, EDN) for automated analysis
-
-## Current Status
-
-**Phase 1: Reference Data Extraction** (In Progress)
-- Extracting IANA PRECIS tables[2] (Unicode 6.3.0 baseline)
-- Processing T. Nemoto draft[3] tables for validation
-- Algorithm verification against known-good datasets
-
-**Phase 2: Dataset Generation** (Planned)
-- Complete Unicode version coverage (6.3.0 through latest)
-- Automated change detection and classification
-- Statistical analysis and compatibility reporting
-
 
 ## Findings
 
 ### Special Cases in Unicode Version Transitions
 
-During implementation, we discovered several codepoints that require special handling to match the reference data from [I-D draft-nemoto-precis-unicode14-00][3]. These fall into two categories:
+During implementation, we discovered several codepoints that require special handling to match the reference data from [I-D draft-nemoto-precis-unicode14-00][3]. 
+These fall into two categories: 
 
-#### Documented Special Cases
+1. Documented  discrepancies: These codepoints are explicitly discussed in I-D draft-nemoto-precis-unicode14-00
+1. Undocumented discrepancies: These codepoints represent cases where our algorithmic derivation differs from the reference tables without explanation in the I-D
 
-These codepoints are explicitly discussed in [I-D draft-nemoto-precis-unicode14-00][3]:
+#### 1. Documented Discrepancies
 
 ##### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
-[I-D draft-nemoto-precis-unicode14-00][3] explicitly states: "Change of `SHARADA SANDHI MARK (U+111C9)` added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass.
+I-D draft-nemoto-precis-unicode14-00 explicitly states: "Change of `SHARADA SANDHI MARK (U+111C9)` added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass.
 PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 is `ID_DIS` or `FREE_PVAL`, however in Unicode 11.0.0 is `PVALID`."
 
 - **Anomaly**: This codepoint appears in both "Changes from derived property value UNASSIGNED" and "Changes from derived property value `ID_DIS` or `FREE_PVAL` to `PVALID`" sections of the reference tables
@@ -77,21 +65,20 @@ PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 i
 
 ##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
-[I-D draft-nemoto-precis-unicode14-00][3] notes: "Unicode General Properties of `CANADIAN SYLLABICS CHI SIGN (U+166D)` was changed from `Po` to `So` in Unicode 12.0.0. This change has changed the basis for calculating of the derived property value from Punctuation (P) in Section 9.16 of RFC 8264 to Symbols (O) in Section 9.15 of RFC 8264. However, this change does not affect the calculation result."
+I-D draft-nemoto-precis-unicode14-00 notes: "Unicode General Properties of `CANADIAN SYLLABICS CHI SIGN (U+166D)` was changed from `Po` to `So` in Unicode 12.0.0. This change has changed the basis for calculating of the derived property value from Punctuation (P) in Section 9.16 of RFC 8264 to Symbols (O) in Section 9.15 of RFC 8264. However, this change does not affect the calculation result."
 
-- **Anomaly**: Despite [I-D draft-nemoto-precis-unicode14-00][3] stating the change "does not affect the calculation result," the reference tables list this codepoint as transitioning from `UNASSIGNED` to `FREE_PVAL`
+- **Anomaly**: Despite I-D draft-nemoto-precis-unicode14-00 stating the change "does not affect the calculation result," the reference tables list this codepoint as transitioning from `UNASSIGNED` to `FREE_PVAL`
 - **Resolution**: Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency)
 
-#### Undocumented Discrepancies
+#### 2. Undocumented Discrepancies
 
-These represent cases where our algorithmic derivation differs from the reference tables without explanation in [I-D draft-nemoto-precis-unicode14-00][3]:
 
 ##### U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0
 
-[I-D draft-nemoto-precis-unicode14-00][3] makes no special remark about this codepoint. It lists the codepoint as transitioning from `UNASSIGNED` to `DISALLOWED`.
+I-D draft-nemoto-precis-unicode14-00 makes no special remark about this codepoint. It lists the codepoint as transitioning from `UNASSIGNED` to `DISALLOWED`.
 
 - **Anomaly**: When U+180F becomes assigned in Unicode 14.0.0, it has `General_Category=Mn` (Nonspacing Mark). Following RFC 8264 Section 8's algorithm, `Mn` is included in LetterDigits (Section 9.2) per RFC 5892, which results in `PVALID` categorization. Yet the I-D categorizes it as `DISALLOWED`.
-  [I-D draft-nemoto-precis-unicode14-00][3] does not explain why this character should be DISALLOWED rather than the algorithmically derived PVALID
+  I-D draft-nemoto-precis-unicode14-00 does not explain why this character should be DISALLOWED rather than the algorithmically derived `PVALID`
 - **Resolution**: Override the algorithmic derivation to force `DISALLOWED` to match reference tables
 
 ### Implementation Notes
@@ -109,24 +96,40 @@ Without further clarification from the specification authors, we have chosen to 
 
 ## Usage
 
-Generate and validate datasets:
-```bash
-# Extract reference data
-bb scripts/extract.clj
+1. Install [Babashka](https://github.com/babashka/babashka#installation)
 
-# Generate new datasets
-bb scripts/prepare.clj
+    ```
+    $ bb tasks
+    The following tasks are available:
 
-# Verify against reference
-bb scripts/verify.clj
-```
+    submodules
+    download   Download Unicode data files, IANA tables, and other required reference sources
+    extract    Extract reference datasets from T. Nemoto draft and IANA PRECIS tables
+    generate   Generate PRECIS property tables using RFC 8264 algorithm from Unicode data
+    verify     Verify generated tables match extracted reference datasets using diff -w
+    report     Generate analysis report of PRECIS property changes across Unicode versions
+    clean      Remove all generated directories (tables-extracted, tables-generated, scratch, data)
+
+    ```
+
+2. Generate and validate datasets:
+    ```bash
+    # Extract reference data
+    bb extract
+
+    # Generate new datasets
+    bb generate
+
+    # Verify against reference
+    bb verify
+    ```
 
 ## Project Structure
 
 - `scripts/` - Data generation and validation scripts
 - `tables-extracted/` - Reference datasets from [T. Nemoto draft][3] and [IANA's precis-tables][2]
 - `tables-generated/` - Generated datasets that should match the extracted ones
-- `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions
+- `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions (**TODO**: this is not yet done)
 
 ## References
 
