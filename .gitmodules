@@ -1,0 +1,6 @@
+[submodule "draft-nemoto-precis-unicode"]
+	path = draft-nemoto-precis-unicode
+	url = https://github.com/stpeter/draft-nemoto-precis-unicode
+[submodule "createtables"]
+	path = createtables
+	url = https://github.com/ramblurr/createtables
