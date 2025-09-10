@@ -52,13 +52,13 @@
                 (spit filepath (str/join "\n" table-lines))))
             ;; Start tracking new section - reset skip flag
             (let [version-range (parse-version-from-header line)]
-              (println "Found section:" line "-> version range:" version-range)
+              ;; (println "Found section:" line "-> version range:" version-range)
               (recur (rest lines) version-range false [] 0 (conj all-lines-so-far line) false)))
 
           ;; Found a UCD format section - set skip flag
           (str/starts-with? line "# Code points in Unicode Character Database")
           (do
-            (println "Found UCD section, skipping tables:" line)
+            ;; (println "Found UCD section, skipping tables:" line)
             ;; Write any pending table before switching to skip mode
             (when (and current-section (seq table-lines))
               (let [table-type (determine-table-type all-lines-so-far)
@@ -70,9 +70,7 @@
 
           ;; Found start of table (~~~~ fence)
           (and current-section (str/starts-with? line "~~~~") (not in-table) (not skip-tables))
-          (do
-            (println "Starting table for section:" current-section)
-            (recur (rest lines) current-section true [] table-counter (conj all-lines-so-far line) skip-tables))
+          (recur (rest lines) current-section true [] table-counter (conj all-lines-so-far line) skip-tables)
 
           ;; Found end of table (~~~~ fence) - only process if not skipping
           (and current-section in-table (str/starts-with? line "~~~~"))

@@ -1,12 +1,11 @@
 #!/usr/bin/env bb
-(ns verify)
-
-(require
- '[generate :refer [load-iana-csv expand-iana-ranges-to-codepoints generate-complete-precis-mappings]]
- '[babashka.process :as p]
- '[clojure.java.io :as io]
- '[clojure.string :as str]
- '[clojure.set :as set])
+(ns verify
+  (:require
+   [generate :refer [load-iana-csv expand-iana-ranges-to-codepoints]]
+   [babashka.process :as p]
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [clojure.set :as set]))
 
 (def tables-dir "tables-extracted")
 (def tables-new-dir "tables-generated")

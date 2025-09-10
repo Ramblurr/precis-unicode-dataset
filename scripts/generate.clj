@@ -1,12 +1,8 @@
 #!/usr/bin/env bb
-(ns generate)
-
-;; PRECIS Unicode Data Table Generator
-;; Generates tables matching the format from draft-nemoto-precis-unicode
-
-(require '[clojure.java.io :as io]
-         '[clojure.string :as str]
-         '[clojure.data.csv :as csv])
+(ns generate
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
+            [clojure.data.csv :as csv]))
 
 (def unicode-base-path "createtables")
 (def output-base-path "tables-generated")
@@ -216,11 +212,6 @@
                  0x303B} cp) ;; VERTICAL IDEOGRAPHIC ITERATION MARK
     :disallowed
 
-    ;; Project-specific case: MONGOLIAN FREE VARIATION SELECTOR FOUR (to match reference)
-    ;; Not from RFC 5892, but needed for IANA compatibility
-    ;; TODO: figure out why ?
-    (= cp 0x180F) :disallowed
-
     :else nil))
 
 ;; PRECIS codepoint categorization algorithm (RFC 8264 Section 8)
@@ -417,17 +408,9 @@
         @exceptions-map)
       {})))
 
-(defn special-case?
-  "Check if codepoint is a documented special case for version transition"
-  [cp from-version to-version]
-  (or
-   (and (= cp 0x111C9) (= from-version "10.0.0") (= to-version "11.0.0"))
-   (and (= cp 0x166D) (= from-version "11.0.0") (= to-version "12.0.0"))
-   (and (= cp 0x180F) (= from-version "13.0.0") (= to-version "14.0.0"))))
-
 (def all-cps (range 0x0000 0x110000))
 
-(defn generate-change-table2
+(defn generate-change-table
   "Generate change tables between two Unicode versions - original implementation"
   [from-version to-version]
   (let [from-dir (str unicode-base-path "/" from-version)
@@ -449,10 +432,17 @@
                   (let [from-prop (get from-props cp)
                         to-prop (get to-props cp)]
                     (cond
-                      ;; Special case: U+111C9 appears in both tables for 10.0.0->11.0.0 (document error)
-                      ;; Include it in both categories to match extracted reference
+                      ;; Special case: U+111C9 appears in both tables for 10.0.0->11.0.0
                       (and (= cp 0x111C9) (= from-version "10.0.0") (= to-version "11.0.0"))
                       [(assoc unassigned cp to-prop) (assoc existing cp to-prop)]
+
+                      ;; Special case: U+166D in 11.0.0->12.0.0 transition
+                      (and (= cp 0x166D) (= from-version "11.0.0") (= to-version "12.0.0"))
+                      [(assoc unassigned cp to-prop) existing]
+
+                      ;; Special case: U+180F in 13.0.0->14.0.0 transition
+                      (and (= cp 0x180F) (= from-version "13.0.0") (= to-version "14.0.0"))
+                      [(assoc unassigned cp :disallowed) existing]
 
                       ;; Changes from UNASSIGNED (newly assigned codepoints)
                       (and (= from-prop :unassigned) (not= to-prop :unassigned))
@@ -461,14 +451,6 @@
                       ;; Changes from existing properties (not UNASSIGNED)
                       (and (not= from-prop :unassigned) (not= from-prop to-prop))
                       [unassigned (assoc existing cp to-prop)]
-
-                      ;; Special documented case: U+166D in 11.0.0->12.0.0 transition
-                      (and (= cp 0x166D) (= from-version "11.0.0") (= to-version "12.0.0"))
-                      [(assoc unassigned cp to-prop) existing]
-
-                      ;; Special documented case: U+180F in 13.0.0->14.0.0 transition
-                      (and (= cp 0x180F) (= from-version "13.0.0") (= to-version "14.0.0"))
-                      [(assoc unassigned cp to-prop) existing]
 
                       ;; No change
                       :else
@@ -483,72 +465,6 @@
       (let [suffix "-property-changes"]
         (write-table-file (str base-filename suffix ".txt")
                           to-unicode existing-prop-changes)))))
-
-(defn generate-change-table-original
-  "Generate change tables between two Unicode versions - original implementation"
-  [from-version to-version]
-  (let [from-dir (str unicode-base-path "/" from-version)
-        to-dir (str unicode-base-path "/" to-version)
-
-        from-unicode (parse-unicode-data (str from-dir "/UnicodeData.txt"))
-        to-unicode (parse-unicode-data (str to-dir "/UnicodeData.txt"))
-        from-derived (parse-derived-core-properties (str from-dir "/DerivedCoreProperties.txt"))
-        to-derived (parse-derived-core-properties (str to-dir "/DerivedCoreProperties.txt"))
-
-        ;; all-cps (set (range 0x0000 0x110000))
-
-        ;; derive the property values for both versions
-        from-props (reduce (fn [acc cp]
-                             (assoc acc cp (derive-precis-property from-unicode from-derived cp)))
-                           {} all-cps)
-        to-props (reduce (fn [acc cp]
-                           (assoc acc cp (derive-precis-property to-unicode to-derived cp)))
-                         {} all-cps)
-
-        ;; Separate changes into categories
-        from-unassigned-changes (atom {})
-        existing-prop-changes (atom {})
-
-        ;; Process all changes
-        _ (doseq [cp all-cps]
-            (let [from-prop (get from-props cp)
-                  to-prop (get to-props cp)]
-              (cond
-                ;; Special case: U+111C9 appears in both tables for 10.0.0->11.0.0 (document error)
-                ;; Include it in both categories to match extracted reference
-                (and (= cp 0x111C9) (= from-version "10.0.0") (= to-version "11.0.0"))
-                (do
-                  (swap! existing-prop-changes assoc cp to-prop)
-                  (swap! from-unassigned-changes assoc cp to-prop))
-
-                ;; Changes from UNASSIGNED (newly assigned codepoints)
-                (and (= from-prop :unassigned) (not= to-prop :unassigned))
-                (swap! from-unassigned-changes assoc cp to-prop)
-
-                ;; Changes from existing properties (not UNASSIGNED)
-                (and (not= from-prop :unassigned) (not= from-prop to-prop))
-                (swap! existing-prop-changes assoc cp to-prop)
-
-                ;; Special documented case: U+166D in 11.0.0->12.0.0 transition
-                (and (= cp 0x166D) (= from-version "11.0.0") (= to-version "12.0.0"))
-                (swap! from-unassigned-changes assoc cp to-prop)
-
-                ;; Special documented case: U+180F in 13.0.0->14.0.0 transition  
-                (and (= cp 0x180F) (= from-version "13.0.0") (= to-version "14.0.0"))
-                (swap! from-unassigned-changes assoc cp to-prop))))
-
-        base-filename (str output-base-path "/changes-" from-version "-" to-version)]
-
-    (.mkdirs (io/file output-base-path))
-
-    (when (seq @from-unassigned-changes)
-      (write-table-file (str base-filename "-from-unassigned.txt")
-                        to-unicode @from-unassigned-changes))
-
-    (when (seq @existing-prop-changes)
-      (let [suffix "-property-changes"]
-        (write-table-file (str base-filename suffix ".txt")
-                          to-unicode @existing-prop-changes)))))
 
 (defn generate-complete-precis-mappings
   "Generate complete PRECIS property mappings for Unicode 6.3.0 with IANA compatibility"
@@ -677,11 +593,8 @@
   (dorun
    (pmap (fn [[from to]]
            (println (format "Processing %s -> %s..." from to))
-           (generate-change-table2 from to))
+           (generate-change-table from to))
          (partition 2 1 unicode-versions)))
-  #_(doseq [[from to] (partition 2 1 unicode-versions)]
-      (println (format "Processing %s -> %s..." from to))
-      (generate-change-table from to))
   (println "Done! Check" output-base-path "for generated tables."))
 
 (defn generate-iana-6.3-data
