@@ -14,8 +14,8 @@
   (if (= start end)
     (common/get-character-name unicode-data start)
     (let [start-name (common/get-character-name unicode-data start)
-          end-name (common/get-character-name unicode-data end)
-          combined (str start-name ".." end-name)]
+          end-name   (common/get-character-name unicode-data end)
+          combined   (str start-name ".." end-name)]
       combined)))
 
 (defn write-table-file
@@ -24,16 +24,16 @@
   (when (seq changes)
     (let [ranges (common/compress-ranges changes)]
       (with-open [writer (io/writer filepath)]
-        (let [lines (for [[start end prop] ranges]
-                      (let [range-str (common/range-format [start end])
-                            prop-str (get common/precis-properties prop "UNKNOWN")
-                            comment (format-comment unicode-data start end)
-                            ;; Build full line and truncate to exactly 72 characters
-                            full-line (format "%-12s; %-11s # %s" range-str prop-str comment)
-                            final-line (if (<= (count full-line) 72)
-                                         full-line
-                                         (subs full-line 0 72))]
-                        (str/trimr final-line)))
+        (let [lines     (for [[start end prop] ranges]
+                          (let [range-str  (common/range-format [start end])
+                                prop-str   (get common/precis-properties prop "UNKNOWN")
+                                comment    (format-comment unicode-data start end)
+                                ;; Build full line and truncate to exactly 72 characters
+                                full-line  (format "%-12s; %-11s # %s" range-str prop-str comment)
+                                final-line (if (<= (count full-line) 72)
+                                             full-line
+                                             (subs full-line 0 72))]
+                            (str/trimr final-line)))
               all-lines (vec lines)]
           ;; Write all lines except the last with newlines, last line without newline  
           (doseq [line (butlast all-lines)]
@@ -45,24 +45,24 @@
 (defn generate-change-table
   "Generate change tables between two Unicode versions using unified derive-precis-property"
   [from-version to-version]
-  (let [from-dir (str unicode-base-path "/" from-version)
-        to-dir (str unicode-base-path "/" to-version)
+  (let [from-dir     (str unicode-base-path "/" from-version)
+        to-dir       (str unicode-base-path "/" to-version)
         from-unicode (common/parse-unicode-data (str from-dir "/UnicodeData.txt"))
-        to-unicode (common/parse-unicode-data (str to-dir "/UnicodeData.txt"))
+        to-unicode   (common/parse-unicode-data (str to-dir "/UnicodeData.txt"))
         from-derived (common/parse-derived-core-properties (str from-dir "/DerivedCoreProperties.txt"))
-        to-derived (common/parse-derived-core-properties (str to-dir "/DerivedCoreProperties.txt"))
+        to-derived   (common/parse-derived-core-properties (str to-dir "/DerivedCoreProperties.txt"))
         ;; derive the property values for both versions using unified function
-        from-props (reduce (fn [acc cp]
-                             (assoc acc cp (common/derive-precis-property from-unicode from-derived cp from-version)))
-                           {} all-codepoints)
-        to-props (reduce (fn [acc cp]
-                           (assoc acc cp (common/derive-precis-property to-unicode to-derived cp to-version)))
-                         {} all-codepoints)
+        from-props   (reduce (fn [acc cp]
+                               (assoc acc cp (common/derive-precis-property from-unicode from-derived cp from-version)))
+                             {} all-codepoints)
+        to-props     (reduce (fn [acc cp]
+                               (assoc acc cp (common/derive-precis-property to-unicode to-derived cp to-version)))
+                             {} all-codepoints)
         ;; Process all changes in one pass
         [from-unassigned-changes existing-prop-changes]
         (reduce (fn [[unassigned existing] cp]
                   (let [from-prop (get from-props cp)
-                        to-prop (get to-props cp)]
+                        to-prop   (get to-props cp)]
                     (cond
                       ;; Special case: U+111C9 appears in both tables for 10.0.0->11.0.0
                       (and (= cp 0x111C9) (= from-version "10.0.0") (= to-version "11.0.0"))
@@ -97,10 +97,10 @@
 (defn generate-complete-precis-mappings
   "Generate complete PRECIS property mappings for Unicode 6.3.0 (uses IANA overrides automatically)"
   []
-  (let [unicode-dir (str unicode-base-path "/6.3.0")
-        unicode-data (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
+  (let [unicode-dir   (str unicode-base-path "/6.3.0")
+        unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
         derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
-        all-cps (range 0x0000 0x110000)]
+        all-cps       (range 0x0000 0x110000)]
 
     (reduce (fn [acc cp]
               ;; Uses unified function which automatically applies IANA overrides for 6.3.0
@@ -114,14 +114,14 @@
     (if (.exists (io/file iana-file))
       (with-open [reader (io/reader iana-file)]
         (let [csv-data (csv/read-csv reader)
-              rows (rest csv-data)]
+              rows     (rest csv-data)]
           (reduce (fn [acc [codepoint-str property description]]
-                    (let [range (common/parse-codepoint-range-iana codepoint-str)
+                    (let [range               (common/parse-codepoint-range-iana codepoint-str)
                           {:keys [start end]} range]
                       ;; Store formatting info for each range
                       (assoc acc [start end] {:codepoint-str codepoint-str
-                                              :property property
-                                              :description description})))
+                                              :property      property
+                                              :description   description})))
                   {} rows)))
       {})))
 
@@ -145,22 +145,22 @@
 
     (.mkdirs (io/file output-base-path))
 
-    (let [unicode-dir (str unicode-base-path "/6.3.0")
-          unicode-data (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
-          sorted-cps (sort (keys mappings))
+    (let [unicode-dir     (str unicode-base-path "/6.3.0")
+          unicode-data    (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
+          sorted-cps      (sort (keys mappings))
           iana-formatting (parse-iana-csv-for-formatting)
 
           ;; Compress consecutive codepoints with same property into ranges
-          ranges (loop [result []
+          ranges (loop [result        []
                         current-start nil
-                        current-end nil
-                        current-prop nil
-                        remaining sorted-cps]
+                        current-end   nil
+                        current-prop  nil
+                        remaining     sorted-cps]
                    (if (empty? remaining)
                      (if current-start
                        (conj result [current-start current-end current-prop])
                        result)
-                     (let [cp (first remaining)
+                     (let [cp   (first remaining)
                            prop (get mappings cp)]
                        (if (and current-start
                                 (= prop current-prop)
@@ -178,23 +178,23 @@
         (.write writer "Codepoint,Property,Description\r\n")
 
         (doseq [[start end prop] ranges]
-          (let [iana-info (find-matching-iana-range iana-formatting start end)
+          (let [iana-info   (find-matching-iana-range iana-formatting start end)
                 ;; Use IANA's exact formatting if available, otherwise generate
-                range-str (if iana-info
-                            (:codepoint-str iana-info)
-                            (if (= start end)
-                              (format "%04X" start)
-                              (format "%04X-%04X" start end)))
-                prop-str (if iana-info
-                           (:property iana-info)
-                           (case prop
-                             :free-pval "ID_DIS or FREE_PVAL"
-                             :pvalid "PVALID"
-                             :disallowed "DISALLOWED"
-                             :unassigned "UNASSIGNED"
-                             :contextj "CONTEXTJ"
-                             :contexto "CONTEXTO"
-                             (str/upper-case (name prop))))
+                range-str   (if iana-info
+                              (:codepoint-str iana-info)
+                              (if (= start end)
+                                (format "%04X" start)
+                                (format "%04X-%04X" start end)))
+                prop-str    (if iana-info
+                              (:property iana-info)
+                              (case prop
+                                :free-pval  "ID_DIS or FREE_PVAL"
+                                :pvalid     "PVALID"
+                                :disallowed "DISALLOWED"
+                                :unassigned "UNASSIGNED"
+                                :contextj   "CONTEXTJ"
+                                :contexto   "CONTEXTO"
+                                (str/upper-case (name prop))))
                 description (if iana-info
                               (:description iana-info)
                               ;; Fallback to generated description
@@ -205,7 +205,7 @@
                                         (common/get-character-name unicode-data end))))]
 
             (.write writer (format "%s,%s,%s\r\n" range-str prop-str
-                                    ;; Quote description if it contains commas, like IANA does
+                                   ;; Quote description if it contains commas, like IANA does
                                    (if (str/includes? description ",")
                                      (format "\"%s\"" description)
                                      description)))))))))
@@ -234,7 +234,6 @@
     (write-iana-6.3-edn mappings)
     (write-iana-6.3-csv mappings)))
 
-;; Main execution
 (defn -main [& args]
   (cond
     (some #{"--iana"} args)

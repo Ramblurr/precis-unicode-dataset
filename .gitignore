@@ -1,3 +1,4 @@
 reference/scratch/
 data/*
 .clj-kondo
+.*

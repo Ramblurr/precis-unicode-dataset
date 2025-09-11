@@ -23,4 +23,8 @@
                             (fs/delete-tree "tables"))}
          distclean {:doc     "Remove all generated directories and downloaded Unicode data"
                     :depends [clean]
-                    :task    (fs/delete-tree "data")}}}
+                    :task    (fs/delete-tree "data")}
+         fmt               (shell "cljfmt -v fix scripts")
+         lint              (if (seq *command-line-args*)
+                             (apply shell "clj-kondo" "--lint" *command-line-args*)
+                             (shell "clj-kondo" "--lint" "scripts"))}}

@@ -49,7 +49,7 @@
 
 (defn determine-rules
   "Determine PRECIS rules that apply to a codepoint (simplified version)"
-  [unicode-data derived-props cp prop]
+  [_unicode-data _derived-props _cp prop]
   ;; This is a simplified version - a full implementation would need
   ;; to track which specific RFC 8264 Section 9 rules were applied
   (case prop
@@ -63,7 +63,7 @@
 
 (defn write-allcodepoints-txt
   "Write allcodepoints.txt format: <codepoint>;<property>;<rules>;<name>"
-  [output-dir version unicode-data derived-props properties]
+  [output-dir _version unicode-data derived-props properties]
   (let [output-file (str output-dir "/allcodepoints.txt")]
     (println (format "  Writing allcodepoints.txt (%,d entries)" (count all-codepoints)))
 
@@ -78,7 +78,7 @@
 
 (defn write-byscript-html
   "Write HTML table sorted by Unicode script (placeholder implementation)"
-  [output-dir version unicode-data derived-props properties]
+  [output-dir _version unicode-data derived-props properties]
   (let [output-file (str output-dir "/byscript.html")]
     (println "  Writing byscript.html (grouped by scripts)")
 
@@ -104,7 +104,7 @@
 
 (defn write-bygc-html
   "Write HTML table sorted by General Category (placeholder implementation)"
-  [output-dir version unicode-data derived-props properties]
+  [output-dir _version unicode-data derived-props properties]
   (let [output-file (str output-dir "/bygc.html")]
     (println "  Writing bygc.html (grouped by general categories)")
 
@@ -130,7 +130,7 @@
 
 (defn write-xmlrfc-xml
   "Write UCD-style range notation format"
-  [output-dir version unicode-data properties]
+  [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/xmlrfc.xml")
         ranges (common/compress-ranges properties)]
     (println (format "  Writing xmlrfc.xml (%,d ranges)" (count ranges)))
@@ -154,7 +154,7 @@
 
 (defn write-iana-xml
   "Write IANA XML registry format"
-  [output-dir version unicode-data properties]
+  [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/idnabis-tables.xml")
         ranges (common/compress-ranges properties)]
     (println (format "  Writing idnabis-tables.xml (%,d records)" (count ranges)))
@@ -185,7 +185,7 @@
 
 (defn write-iana-csv
   "Write IANA CSV format with proper escaping"
-  [output-dir version unicode-data properties]
+  [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/iana.csv")
         ranges (common/compress-ranges properties)]
     (println (format "  Writing iana.csv (%,d records)" (count ranges)))

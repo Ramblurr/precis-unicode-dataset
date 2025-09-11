@@ -15,7 +15,8 @@
    :contextj   "CONTEXTJ"
    :contexto   "CONTEXTO"})
 
-(def scratch-dir "reference/scratch")
+(def extracted-dir "reference/tables-extracted")
+(def generated-dir "reference/tables-generated")
 
 (defn parse-hex
   "Parse a hexadecimal string to integer"
@@ -57,9 +58,9 @@
         parsed-v2 (parse-version v2)]
     (cond
       (and parsed-v1 parsed-v2) (compare parsed-v1 parsed-v2)
-      parsed-v1 -1  ; v1 is valid, v2 is not
-      parsed-v2 1   ; v2 is valid, v1 is not
-      :else 0)))    ; both are invalid
+      parsed-v1                 -1  ; v1 is valid, v2 is not
+      parsed-v2                 1   ; v2 is valid, v1 is not
+      :else                     0)))    ; both are invalid
 
 (defn version-gte?
   "Check if version v1 is greater than or equal to v2"
@@ -113,7 +114,7 @@
     (reduce
      (fn [acc line]
        (when-not (or (str/blank? line) (str/starts-with? line "#"))
-         (let [[cp-range property comment] (map str/trim (str/split line #";"))
+         (let [[cp-range property _comment] (map str/trim (str/split line #";"))
                [start end]                 (parse-codepoint-range cp-range)]
            (update acc (keyword (str/lower-case property))
                    (fnil into #{}) (range start (inc end)))))
@@ -303,7 +304,7 @@
   "Convert IANA CSV data to a complete codepoint->property mapping"
   [iana-data]
   (reduce
-   (fn [acc {:keys [codepoint-range property description]}]
+   (fn [acc {:keys [codepoint-range property]}]
      (let [{:keys [start end]} codepoint-range
            normalized-prop     (normalize-property-name property)]
        (reduce #(assoc %1 %2 normalized-prop)
@@ -318,7 +319,7 @@
   "Load complete exceptions mapping from IANA PRECIS tables (cached)"
   []
   (when (nil? @iana-exceptions-cache)
-    (let [iana-file (str scratch-dir "/precis-tables-6.3.0.csv")]
+    (let [iana-file (str extracted-dir "/precis-tables-6.3.0.csv")]
       (if (.exists (io/file iana-file))
         (let [iana-data      (load-iana-csv iana-file)
               exceptions-map (atom {})]
@@ -414,9 +415,9 @@
   "Get the latest Unicode version from unicode.org by parsing the content of the latest page"
   []
   (try
-    (let [response (http/get "https://www.unicode.org/versions/latest/" 
-                             {:follow-redirects :normal :as :string})
-          body (:body response)
+    (let [response      (http/get "https://www.unicode.org/versions/latest/"
+                                  {:follow-redirects :normal :as :string})
+          body          (:body response)
           version-match (when body (re-find #"Unicode\s+(\d+\.\d+\.\d+)" body))]
       (when version-match
         (second version-match)))

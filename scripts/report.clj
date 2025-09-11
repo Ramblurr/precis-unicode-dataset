@@ -1,32 +1,27 @@
 #!/usr/bin/env bb
 (ns report
   (:require
+   [babashka.fs :as fs]
    [clojure.java.io :as io]
    [clojure.string :as str]
    [common :as common]))
 
-;; Data structures
-(defrecord VersionChange [from-version to-version stats notes discrepancies])
 (defrecord PropertyStats [pvalid unassigned contextj contexto disallowed free-pval total])
-(defrecord PropertyDelta [before after change])
 
-;; Configuration
 (def data-dir "data")
 (def get-unicode-versions (memoize #(common/discover-unicode-versions data-dir)))
 
-(def tables-dir "reference/tables-generated")
-(def extracted-dir "reference/tables-extracted")
 (def output-file "REPORT.md")
 
 (defn parse-property-line
   "Parse a single line from a table file"
   [line]
   (when-not (str/blank? line)
-    (let [parts (str/split line #";")
-          cp-range (str/trim (first parts))
+    (let [parts            (str/split line #";")
+          cp-range         (str/trim (first parts))
           property-section (when (> (count parts) 1) (second parts))
-          property (when property-section
-                     (str/trim (first (str/split property-section #"#"))))]
+          property         (when property-section
+                             (str/trim (first (str/split property-section #"#"))))]
       (when (and cp-range property)
         {:cp-range (common/parse-codepoint-range cp-range)
          :property (keyword (str/lower-case (str/replace property #"_" "-")))}))))
@@ -34,7 +29,7 @@
 (defn read-table-file
   "Read and parse a table file, returning a sequence of property entries"
   [filepath]
-  (if (.exists (io/file filepath))
+  (if (fs/exists? filepath)
     (->> (slurp filepath)
          str/split-lines
          (map parse-property-line)
@@ -83,15 +78,15 @@
 (defn load-iana-baseline
   "Load IANA 6.3.0 baseline for comparison"
   []
-  (let [iana-file (str extracted-dir "/precis-tables-6.3.0.csv")]
-    (if (.exists (io/file iana-file))
+  (let [iana-file (str common/extracted-dir "/precis-tables-6.3.0.csv")]
+    (if (fs/exists? iana-file)
       (with-open [reader (io/reader iana-file)]
         (->> (line-seq reader)
              (drop 1) ; Skip header
              (map (fn [line]
                     (let [[codepoint property _] (str/split line #",")]
                       (when (and codepoint property)
-                        (let [range (common/parse-codepoint-range-iana codepoint)
+                        (let [range    (common/parse-codepoint-range-iana codepoint)
                               cp-range [(:start range) (:end range)]]
                           {:cp-range cp-range
                            :property (normalize-property
@@ -101,41 +96,41 @@
              expand-ranges))
       {})))
 
+(defn apply-property-changes
+  "Pure function to apply property changes to a baseline property map"
+  [baseline-props unassigned-changes prop-changes]
+  (-> baseline-props
+      (merge unassigned-changes)
+      (merge prop-changes)))
+
 (defn process-version-change
   "Process changes between two Unicode versions"
   [from-version to-version baseline-props]
-  (let [from-unassigned-file (str tables-dir "/changes-" from-version "-" to-version "-from-unassigned.txt")
-        property-changes-file (str tables-dir "/changes-" from-version "-" to-version "-property-changes.txt")
+  (let [from-unassigned-file  (str common/generated-dir "/changes-" from-version "-" to-version "-from-unassigned.txt")
+        property-changes-file (str common/generated-dir "/changes-" from-version "-" to-version "-property-changes.txt")
 
         ;; Read the change files
-        from-unassigned (read-table-file from-unassigned-file)
+        from-unassigned  (read-table-file from-unassigned-file)
         property-changes (read-table-file property-changes-file)
 
         ;; Calculate how many codepoints changed
         unassigned-changes (expand-ranges from-unassigned)
-        prop-changes (expand-ranges property-changes)
+        prop-changes       (expand-ranges property-changes)
 
-        ;; For stats, we need to track the cumulative state
-        ;; Start with baseline and apply changes progressively
-        current-props (atom baseline-props)
-
-        ;; Apply changes from this version transition
-        _ (doseq [[cp prop] unassigned-changes]
-            (swap! current-props assoc cp prop))
-        _ (doseq [[cp prop] prop-changes]
-            (swap! current-props assoc cp prop))
+        ;; Apply changes to baseline using pure function
+        updated-props (apply-property-changes baseline-props unassigned-changes prop-changes)
 
         ;; Calculate stats after changes
-        after-stats (calculate-property-stats @current-props)
+        after-stats (calculate-property-stats updated-props)
 
         ;; Count of changes from non-UNASSIGNED properties
         non-unassigned-changes (count prop-changes)]
 
-    {:from-version from-version
-     :to-version to-version
-     :stats after-stats
+    {:from-version           from-version
+     :to-version             to-version
+     :stats                  after-stats
      :non-unassigned-changes non-unassigned-changes
-     :updated-props @current-props}))
+     :updated-props          updated-props}))
 
 (defn format-delta
   "Format a property delta for display"
@@ -143,13 +138,13 @@
   (let [change (- after before)]
     (cond
       (zero? change) (format "%s did not change, at %,d" property-name after)
-      (pos? change) (format "%s changed from %,d to %,d (+%,d)" property-name before after change)
-      :else (format "%s changed from %,d to %,d (%,d)" property-name before after change))))
+      (pos? change)  (format "%s changed from %,d to %,d (+%,d)" property-name before after change)
+      :else          (format "%s changed from %,d to %,d (%,d)" property-name before after change))))
 
 (defn generate-version-notes
   "Generate version-specific notes based on known discrepancies and changes"
   [from-version to-version non-unassigned-changes]
-  (let [has-impact (> non-unassigned-changes 0)
+  (let [has-impact     (> non-unassigned-changes 0)
         base-statement (if has-impact
                          (format "There are changes made to Unicode between version %s and %s that impact PRECIS calculation of the derived property values."
                                  from-version to-version)
@@ -212,16 +207,16 @@
 (defn update-readme-with-report
   "Update README.md by embedding the report between the markers"
   [report-content]
-  (let [readme-file "README.md"
+  (let [readme-file  "README.md"
         start-marker "<!-- START of REPORT.md embed -->"
-        end-marker "<!-- END of REPORT.md embed -->"]
-    (if (.exists (io/file readme-file))
+        end-marker   "<!-- END of REPORT.md embed -->"]
+    (if (fs/exists? readme-file)
       (let [readme-content (slurp readme-file)
-            start-idx (str/index-of readme-content start-marker)
-            end-idx (str/index-of readme-content end-marker)]
+            start-idx      (str/index-of readme-content start-marker)
+            end-idx        (str/index-of readme-content end-marker)]
         (if (and start-idx end-idx)
-          (let [before (subs readme-content 0 (+ start-idx (count start-marker)))
-                after (subs readme-content end-idx)
+          (let [before      (subs readme-content 0 (+ start-idx (count start-marker)))
+                after       (subs readme-content end-idx)
                 new-content (str before "\n" report-content "\n" after)]
             (spit readme-file new-content)
             (println "README.md updated with report content"))
@@ -233,18 +228,15 @@
   [update-readme?]
   (println "Generating PRECIS Unicode Compatibility Report...")
 
-  ;; Load baseline IANA 6.3.0 data
   (let [baseline-props (load-iana-baseline)
         baseline-stats (calculate-property-stats baseline-props)
 
-        ;; Process each version transition
         unicode-versions (get-unicode-versions)
-        version-pairs (partition 2 1 unicode-versions)
+        version-pairs    (partition 2 1 unicode-versions)
 
-        ;; Accumulate changes through versions
         report-sections (reduce
                          (fn [{:keys [current-props current-stats sections]} [from-ver to-ver]]
-                           (let [result (process-version-change from-ver to-ver current-props)
+                           (let [result  (process-version-change from-ver to-ver current-props)
                                  section (format-version-section
                                           from-ver to-ver
                                           current-stats
@@ -252,16 +244,14 @@
                                           (:non-unassigned-changes result))]
                              {:current-props (:updated-props result)
                               :current-stats (:stats result)
-                              :sections (conj sections section)}))
+                              :sections      (conj sections section)}))
                          {:current-props baseline-props
                           :current-stats baseline-stats
-                          :sections []}
+                          :sections      []}
                          version-pairs)
 
-        ;; Get the latest Unicode version
         latest-version (last unicode-versions)
 
-        ;; Generate complete report
         report-content (str/join "\n"
                                  [(format "## Overview of Changes Between Unicode 6.3.0 and %s" latest-version)
                                   ""
@@ -269,15 +259,12 @@
                                   ""
                                   (str/join "\n" (:sections report-sections))])]
 
-    ;; Write report to file
     (spit output-file report-content)
     (println (format "Report generated: %s" output-file))
 
-    ;; Update README if requested
     (when update-readme?
       (update-readme-with-report report-content))))
 
-;; Main execution
 (defn -main [& args]
   (let [update-readme? (some #{"--readme"} args)]
     (generate-report update-readme?)))

@@ -18,26 +18,26 @@
     (cond
       (str/includes? context "Changes from derived property value UNASSIGNED") "from-unassigned"
       ;; (str/includes? context "Changes from derived property value ID_DIS or FREE_PVAL to PVALID") "id-dis-to-pvalid"
-      (str/includes? context "Changes from derived property value") "property-changes"
-      :else "from-unassigned"))) ; Default to from-unassigned since that's most common
+      (str/includes? context "Changes from derived property value")            "property-changes"
+      :else                                                                    "from-unassigned"))) ; Default to from-unassigned since that's most common
 
 (defn extract-tables
   "Extract tables from the markdown file and write them to separate .txt files"
   [input-file output-dir]
   (println "Reading" input-file)
   (let [content (slurp input-file)
-        lines (str/split-lines content)]
+        lines   (str/split-lines content)]
 
     (println "Creating output directory:" output-dir)
     (.mkdirs (io/file output-dir))
 
-    (loop [lines lines
-           current-section nil
-           in-table false
-           table-lines []
-           table-counter 0
+    (loop [lines            lines
+           current-section  nil
+           in-table         false
+           table-lines      []
+           table-counter    0
            all-lines-so-far []
-           skip-tables false] ; New flag to skip tables in UCD sections
+           skip-tables      false] ; New flag to skip tables in UCD sections
       (when-let [line (first lines)]
         (cond
           ;; Found a new section header for changes
@@ -46,8 +46,8 @@
             ;; Write previous table if we had one
             (when (and current-section (seq table-lines))
               (let [table-type (determine-table-type all-lines-so-far)
-                    filename (str "changes-" current-section "-" table-type ".txt")
-                    filepath (str output-dir "/" filename)]
+                    filename   (str "changes-" current-section "-" table-type ".txt")
+                    filepath   (str output-dir "/" filename)]
                 (println "Writing" filepath)
                 (spit filepath (str/join "\n" table-lines))))
             ;; Start tracking new section - reset skip flag
@@ -62,8 +62,8 @@
             ;; Write any pending table before switching to skip mode
             (when (and current-section (seq table-lines))
               (let [table-type (determine-table-type all-lines-so-far)
-                    filename (str "changes-" current-section "-" table-type ".txt")
-                    filepath (str output-dir "/" filename)]
+                    filename   (str "changes-" current-section "-" table-type ".txt")
+                    filepath   (str output-dir "/" filename)]
                 (println "Writing" filepath)
                 (spit filepath (str/join "\n" table-lines))))
             (recur (rest lines) current-section false [] table-counter (conj all-lines-so-far line) true))
@@ -74,19 +74,18 @@
 
           ;; Found end of table (~~~~ fence) - only process if not skipping
           (and current-section in-table (str/starts-with? line "~~~~"))
-          (do
-            (if skip-tables
-              (do
-                (println "Skipping table in UCD section with" (count table-lines) "lines")
-                (recur (rest lines) current-section false [] table-counter (conj all-lines-so-far line) skip-tables))
-              (do
-                ;; Write the table immediately with appropriate suffix
-                (let [table-type (determine-table-type all-lines-so-far)
-                      filename (str "changes-" current-section "-" table-type ".txt")
-                      filepath (str output-dir "/" filename)]
-                  (spit filepath (str/join "\n" table-lines)))
-                ;; Continue processing in same section for additional tables
-                (recur (rest lines) current-section false [] (inc table-counter) (conj all-lines-so-far line) skip-tables))))
+          (if skip-tables
+            (do
+              (println "Skipping table in UCD section with" (count table-lines) "lines")
+              (recur (rest lines) current-section false [] table-counter (conj all-lines-so-far line) skip-tables))
+            (do
+              ;; Write the table immediately with appropriate suffix
+              (let [table-type (determine-table-type all-lines-so-far)
+                    filename   (str "changes-" current-section "-" table-type ".txt")
+                    filepath   (str output-dir "/" filename)]
+                (spit filepath (str/join "\n" table-lines)))
+              ;; Continue processing in same section for additional tables
+              (recur (rest lines) current-section false [] (inc table-counter) (conj all-lines-so-far line) skip-tables)))
 
           ;; Collect table content - only if not skipping
           (and current-section in-table (not (str/blank? line)) (not skip-tables))
@@ -102,36 +101,22 @@
 
     (println "Extraction complete!")))
 
-(defn fetch-iana-csv
-  "Fetch the official IANA PRECIS tables CSV file"
-  [output-dir]
-  (let [url "https://www.iana.org/assignments/precis-tables-6.3.0/precis-tables-6.3.0.csv"
-        output-file (str output-dir "/precis-tables-6.3.0.csv")]
-    (println "Fetching IANA PRECIS tables from:" url)
-    (.mkdirs (io/file output-dir))
-    (try
-      (with-open [in (io/input-stream url)
-                  out (io/output-stream output-file)]
-        (io/copy in out))
-      (println "Successfully downloaded to:" output-file)
-      true
-      (catch Exception e
-        (println "Error fetching IANA CSV:" (.getMessage e))
-        false))))
-
-(defn -main [& args]
-  (let [input-file "draft-nemoto-precis-unicode/draft-nemoto-precis-unicode.md"
+(defn -main [& _]
+  (let [input-file "reference/tables-extracted/draft-nemoto-precis-unicode.md"
         output-dir "reference/tables-extracted"]
 
-    ;; First fetch the IANA CSV
-    (fetch-iana-csv output-dir)
+    ;; Check if IANA CSV exists (should be downloaded by download.clj)
+    (let [iana-file (str output-dir "/precis-tables-6.3.0.csv")]
+      (when-not (.exists (io/file iana-file))
+        (println "Warning: IANA CSV not found at" iana-file)
+        (println "Run 'bb download' first to download reference files")))
 
-    ;; Then extract tables from the markdown file if it exists
+    ;; Extract tables from the markdown file if it exists
     (if (.exists (io/file input-file))
       (extract-tables input-file output-dir)
       (do
         (println "Error: Input file" input-file "not found")
-        (println "Make sure to run this script from the draft-nemoto-precis-unicode directory")
+        (println "Run 'bb download' first to download the draft document")
         (System/exit 1)))))
 
 (when (= *file* (System/getProperty "babashka.file"))

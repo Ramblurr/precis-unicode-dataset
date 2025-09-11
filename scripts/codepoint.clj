@@ -1,8 +1,8 @@
 #!/usr/bin/env bb
 (ns codepoint
-  (:require [common :as common]
-            [clojure.pprint :as pprint]
-            [clojure.string :as str]))
+  (:require
+   [clojure.pprint :as pprint]
+   [common :as common]))
 
 (def unicode-versions ["6.3.0" "7.0.0" "8.0.0" "9.0.0" "10.0.0" "11.0.0" "12.0.0" "13.0.0" "14.0.0" "15.0.0" "16.0.0" "17.0.0"])
 
@@ -10,11 +10,11 @@
   "Load Unicode data for multiple versions"
   [versions cp]
   (reduce (fn [acc version]
-            (let [unicode-data (common/parse-unicode-data (str "data/" version "/UnicodeData.txt"))
+            (let [unicode-data  (common/parse-unicode-data (str "data/" version "/UnicodeData.txt"))
                   derived-props (common/parse-derived-core-properties (str "data/" version "/DerivedCoreProperties.txt"))]
-              (assoc acc version {:unicode-data unicode-data
+              (assoc acc version {:unicode-data  unicode-data
                                   :derived-props derived-props
-                                  :entry (get unicode-data cp)})))
+                                  :entry         (get unicode-data cp)})))
           {} versions))
 
 (defn test-codepoint
@@ -95,8 +95,8 @@
 
 (defn -main [& args]
   (let [parsed-args (loop [remaining args
-                           cp-hex nil
-                           versions nil]
+                           cp-hex    nil
+                           versions  nil]
                       (cond
                         (empty? remaining)
                         {:cp-hex cp-hex :versions versions}
