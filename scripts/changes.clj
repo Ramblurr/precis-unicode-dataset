@@ -1,9 +1,9 @@
 #!/usr/bin/env bb
 (ns changes
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
-            [clojure.data.csv :as csv]
-            [common :as common :refer [all-codepoints]]))
+  (:require
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [common :as common :refer [all-codepoints]]))
 
 (def unicode-base-path "data")
 (def output-base-path "reference/tables-generated")
@@ -107,29 +107,6 @@
               (assoc acc cp (common/derive-precis-property unicode-data derived-props cp "6.3.0")))
             {} all-cps)))
 
-(defn parse-iana-csv-for-formatting
-  "Parse IANA CSV to extract formatting patterns and descriptions"
-  []
-  (let [iana-file "reference/tables-extracted/precis-tables-6.3.0.csv"]
-    (if (.exists (io/file iana-file))
-      (with-open [reader (io/reader iana-file)]
-        (let [csv-data (csv/read-csv reader)
-              rows     (rest csv-data)]
-          (reduce (fn [acc [codepoint-str property description]]
-                    (let [range               (common/parse-codepoint-range-iana codepoint-str)
-                          {:keys [start end]} range]
-                      ;; Store formatting info for each range
-                      (assoc acc [start end] {:codepoint-str codepoint-str
-                                              :property      property
-                                              :description   description})))
-                  {} rows)))
-      {})))
-
-(defn find-matching-iana-range
-  "Find IANA formatting info for a given range"
-  [iana-formatting start end]
-  (get iana-formatting [start end]))
-
 (defn write-iana-6.3-edn
   "Save complete PRECIS mappings to file for verification"
   [mappings]
@@ -142,73 +119,10 @@
   [mappings]
   (let [output-file (str output-base-path "/precis-tables-6.3.0.csv")]
     (println (format "Generating IANA-compatible CSV: %s" output-file))
-
     (.mkdirs (io/file output-base-path))
-
-    (let [unicode-dir     (str unicode-base-path "/6.3.0")
-          unicode-data    (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
-          sorted-cps      (sort (keys mappings))
-          iana-formatting (parse-iana-csv-for-formatting)
-
-          ;; Compress consecutive codepoints with same property into ranges
-          ranges (loop [result        []
-                        current-start nil
-                        current-end   nil
-                        current-prop  nil
-                        remaining     sorted-cps]
-                   (if (empty? remaining)
-                     (if current-start
-                       (conj result [current-start current-end current-prop])
-                       result)
-                     (let [cp   (first remaining)
-                           prop (get mappings cp)]
-                       (if (and current-start
-                                (= prop current-prop)
-                                (= cp (inc current-end)))
-                         ;; Extend current range
-                         (recur result current-start cp prop (rest remaining))
-                         ;; Start new range
-                         (recur (if current-start
-                                  (conj result [current-start current-end current-prop])
-                                  result)
-                                cp cp prop (rest remaining))))))]
-
-      (with-open [writer (io/writer output-file)]
-        ;; Write CSV header with Windows line endings to match IANA
-        (.write writer "Codepoint,Property,Description\r\n")
-
-        (doseq [[start end prop] ranges]
-          (let [iana-info   (find-matching-iana-range iana-formatting start end)
-                ;; Use IANA's exact formatting if available, otherwise generate
-                range-str   (if iana-info
-                              (:codepoint-str iana-info)
-                              (if (= start end)
-                                (format "%04X" start)
-                                (format "%04X-%04X" start end)))
-                prop-str    (if iana-info
-                              (:property iana-info)
-                              (case prop
-                                :free-pval  "ID_DIS or FREE_PVAL"
-                                :pvalid     "PVALID"
-                                :disallowed "DISALLOWED"
-                                :unassigned "UNASSIGNED"
-                                :contextj   "CONTEXTJ"
-                                :contexto   "CONTEXTO"
-                                (str/upper-case (name prop))))
-                description (if iana-info
-                              (:description iana-info)
-                              ;; Fallback to generated description
-                              (if (= start end)
-                                (common/get-character-name unicode-data start)
-                                (format "%s..%s"
-                                        (common/get-character-name unicode-data start)
-                                        (common/get-character-name unicode-data end))))]
-
-            (.write writer (format "%s,%s,%s\r\n" range-str prop-str
-                                   ;; Quote description if it contains commas, like IANA does
-                                   (if (str/includes? description ",")
-                                     (format "\"%s\"" description)
-                                     description)))))))))
+    (let [unicode-dir  (str unicode-base-path "/6.3.0")
+          unicode-data (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))]
+      (common/write-iana-csv output-file unicode-data mappings))))
 
 (defn generate-unicode-tables
   "Generate Unicode change tables between versions"

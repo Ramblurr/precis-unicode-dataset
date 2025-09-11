@@ -45,6 +45,32 @@
     (hex-format start)
     (str (hex-format start) ".." (hex-format end))))
 
+(defn compress-ranges
+  "Compress consecutive codepoints with same property into ranges"
+  [codepoint-props]
+  (let [sorted-cps (sort (keys codepoint-props))]
+    (loop [ranges        []
+           current-start nil
+           current-end   nil
+           current-prop  nil
+           remaining     sorted-cps]
+      (if (empty? remaining)
+        (if current-start
+          (conj ranges [current-start current-end current-prop])
+          ranges)
+        (let [cp   (first remaining)
+              prop (get codepoint-props cp)]
+          (if (and current-start
+                   (= prop current-prop)
+                   (= cp (inc current-end)))
+            ;; Extend current range
+            (recur ranges current-start cp prop (rest remaining))
+            ;; Start new range
+            (recur (if current-start
+                     (conj ranges [current-start current-end current-prop])
+                     ranges)
+                   cp cp prop (rest remaining))))))))
+
 (defn parse-version
   "Parse version string like '6.3.0' into comparable vector [6 3 0]"
   [version-str]
@@ -83,27 +109,38 @@
                cp-str           (nth fields 0)
                name             (nth fields 1)
                general-category (nth fields 2)
-               decomp           (nth fields 5)]
+               decomp           (nth fields 5)
+               unicode10-name   (when (>= (count fields) 11) (nth fields 10))]
            (if (str/ends-with? name ", First>")
              ;; Range start - store for next line
              (assoc acc :range-start {:cp     (parse-hex cp-str)
                                       :gc     general-category
-                                      :decomp decomp})
+                                      :decomp decomp
+                                      :name   name})
              (if (str/ends-with? name ", Last>")
                ;; Range end - apply to range
                (let [{:keys [cp gc decomp]} (:range-start acc)
                      start-cp               cp
-                     end-cp                 (parse-hex cp-str)]
+                     end-cp                 (parse-hex cp-str)
+                     range-first-name       (get-in acc [:range-start :name])
+                     range-last-name        name]
                  (-> acc
                      (dissoc :range-start)
-                     (as-> m (reduce #(assoc %1 %2 {:general-category gc
-                                                    :decomposition    decomp})
+                     (as-> m (reduce (fn [acc cp-in-range]
+                                       (let [cp-name (cond
+                                                       (= cp-in-range start-cp) range-first-name
+                                                       (= cp-in-range end-cp)   range-last-name
+                                                       :else                    nil)]
+                                         (assoc acc cp-in-range {:general-category gc
+                                                                 :decomposition    decomp
+                                                                 :name             cp-name})))
                                      m (range start-cp (inc end-cp))))))
                ;; Regular entry
                (assoc acc (parse-hex cp-str)
                       {:general-category general-category
                        :decomposition    decomp
-                       :name             name}))))))
+                       :name             name
+                       :unicode10-name   unicode10-name}))))))
      {}
      (line-seq reader))))
 
@@ -115,7 +152,7 @@
      (fn [acc line]
        (when-not (or (str/blank? line) (str/starts-with? line "#"))
          (let [[cp-range property _comment] (map str/trim (str/split line #";"))
-               [start end]                 (parse-codepoint-range cp-range)]
+               [start end]                  (parse-codepoint-range cp-range)]
            (update acc (keyword (str/lower-case property))
                    (fnil into #{}) (range start (inc end)))))
        acc)
@@ -382,34 +419,113 @@
       ;; 5. Standard RFC 8264 algorithm
       :else (derive-precis-property-rfc8264 unicode-data derived-props cp))))
 
-;; Output utility functions
+(defn iana-compatible-name
+  "Convert character names to IANA-compatible format following Ruby qTris transformations"
+  [name]
+  (-> name
+      str/upper-case
+      (str/replace "<CONTROL>" "NULL")
+      (str/replace #"<UNASSIGNED-[0-9A-F]+>" "<RESERVED>")  ; Transform <UNASSIGNED-XXXX> to <RESERVED>
+      (str/replace #"EXTENSION ([A-Z])>.." "EXTENSION $1, FIRST>..")
+      (str/replace #"EXTENSION ([A-Z])>$" "EXTENSION $1, LAST>")
+      (str/replace "IDEOGRAPH>.." "IDEOGRAPH, FIRST>..")
+      (str/replace #"IDEOGRAPH>$" "IDEOGRAPH, LAST>")
+      (str/replace "SYLLABLE>.." "SYLLABLE, FIRST>..")
+      (str/replace #"SYLLABLE>$" "SYLLABLE, LAST>")
+      (str/replace "SURROGATE>.." "SURROGATE, FIRST>..")
+      (str/replace #"SURROGATE>$" "SURROGATE, LAST>")
+      (str/replace "NONCHARACTER" "NOT A CHARACTER")))
+
 (defn get-character-name
-  "Get Unicode character name for a codepoint"
+  "Get Unicode character name for a codepoint, using Unicode 1.0 name for control characters"
   [unicode-data cp]
-  (get-in unicode-data [cp :name]
-          ;; Handle special ranges for unassigned codepoints
+  (let [name           (get-in unicode-data [cp :name])
+        unicode10-name (get-in unicode-data [cp :unicode10-name])
+        assigned?      (contains? unicode-data cp)]
+    ;; Use Unicode 1.0 name for control characters, fall back to regular name
+    (if (and (= name "<control>") (not (str/blank? unicode10-name)))
+      unicode10-name
+      (or name
+          ;; Handle special ranges for ASSIGNED codepoints only
+          (when assigned?
+            (cond
+              ;; CJK Ideographs ranges
+              (<= 0x3400 cp 0x4DBF)   "<CJK Ideograph Extension A>"
+              (<= 0x4E00 cp 0x9FFF)   "<CJK Ideograph>"
+              (<= 0xF900 cp 0xFAFF)   "<CJK Compatibility Ideograph>"
+              (<= 0x20000 cp 0x2A6DF) "<CJK Ideograph Extension B>"
+              (<= 0x2A700 cp 0x2B73F) "<CJK Ideograph Extension C>"
+              (<= 0x2B740 cp 0x2B81F) "<CJK Ideograph Extension D>"
+              (<= 0x2B820 cp 0x2CEAF) "<CJK Ideograph Extension E>"
+              (<= 0x2CEB0 cp 0x2EBEF) "<CJK Ideograph Extension F>"
+              (<= 0x30000 cp 0x3134A) "<CJK Ideograph Extension G>"   ;; New in Unicode 13.0.0
+
+              ;; Tangut Ideographs
+              (<= 0x17000 cp 0x187F7) "<Tangut Ideograph>"
+              (<= 0x18800 cp 0x18AFF) "<Tangut Ideograph Supplement>" ;; New in Unicode 12.0.0
+              (<= 0x18D00 cp 0x18D08) "<Tangut Ideograph Supplement>" ;; Additional range
+
+              ;; Hangul Syllables
+              (<= 0xAC00 cp 0xD7AF) "<Hangul Syllable>"
+
+              ;; Surrogate ranges (High and Low)
+              (<= 0xD800 cp 0xDBFF) "<Non Private Use High Surrogate>"
+              (<= 0xDC00 cp 0xDFFF) "<Low Surrogate>"
+
+              ;; Private Use Areas
+              (<= 0xE000 cp 0xF8FF)     "<Private Use>"
+              (<= 0xF0000 cp 0xFFFFD)   "<Plane 15 Private Use>"
+              (<= 0x100000 cp 0x10FFFD) "<Plane 16 Private Use>"
+
+              ;; No algorithmic name applies for this assigned codepoint
+              :else nil))
+          ;; Special case for noncharacters (unassigned but should be "NOT A CHARACTER")
           (cond
-            ;; CJK Ideographs ranges
-            (<= 0x3400 cp 0x4DBF)   "<CJK Ideograph Extension A>"
-            (<= 0x4E00 cp 0x9FFF)   "<CJK Ideograph>"
-            (<= 0xF900 cp 0xFAFF)   "<CJK Compatibility Ideograph>"
-            (<= 0x20000 cp 0x2A6DF) "<CJK Ideograph Extension B>"
-            (<= 0x2A700 cp 0x2B73F) "<CJK Ideograph Extension C>"
-            (<= 0x2B740 cp 0x2B81F) "<CJK Ideograph Extension D>"
-            (<= 0x2B820 cp 0x2CEAF) "<CJK Ideograph Extension E>"
-            (<= 0x2CEB0 cp 0x2EBEF) "<CJK Ideograph Extension F>"
-            (<= 0x30000 cp 0x3134A) "<CJK Ideograph Extension G>"   ;; New in Unicode 13.0.0
+            ;; Noncharacters: U+FDD0..U+FDEF and U+xxFFFE, U+xxFFFF
+            (or (<= 0xFDD0 cp 0xFDEF)
+                (= (bit-and cp 0xFFFF) 0xFFFE)
+                (= (bit-and cp 0xFFFF) 0xFFFF))
+            "<NONCHARACTER>"
 
-            ;; Tangut Ideographs
-            (<= 0x17000 cp 0x187F7) "<Tangut Ideograph>"
-            (<= 0x18800 cp 0x18AFF) "<Tangut Ideograph Supplement>" ;; New in Unicode 12.0.0
-            (<= 0x18D00 cp 0x18D08) "<Tangut Ideograph Supplement>" ;; Additional range
+            ;; All other unassigned codepoints
+            :else (format "<UNASSIGNED-%04X>" cp))))))
 
-            ;; Hangul Syllables
-            (<= 0xAC00 cp 0xD7AF) "<Hangul Syllable>"
+(defn write-iana-csv
+  "Write IANA CSV format with proper escaping and range compression"
+  [output-file unicode-data properties]
+  (let [ranges (compress-ranges properties)]
+    (println (format "  Writing iana.csv (%,d ranges)" (count ranges)))
 
-            ;; Default for truly unassigned
-            :else (format "<UNASSIGNED-%04X>" cp))))
+    (with-open [writer (io/writer output-file)]
+      (.write writer "Codepoint,Property,Description\r\n")
+
+      (doseq [[start end prop] ranges]
+        (let [range-str   (if (= start end)
+                            (format "%04X" start)
+                            (format "%04X-%04X" start end))
+              prop-str    (case prop
+                            :free-pval  "ID_DIS or FREE_PVAL"
+                            :pvalid     "PVALID"
+                            :disallowed "DISALLOWED"
+                            :unassigned "UNASSIGNED"
+                            :contextj   "CONTEXTJ"
+                            :contexto   "CONTEXTO"
+                            (str/upper-case (name prop)))
+              ;; Generate description with IANA-compatible name processing
+              description (-> (if (= start end)
+                                (get-character-name unicode-data start)
+                                (format "%s..%s"
+                                        (get-character-name unicode-data start)
+                                        (get-character-name unicode-data end)))
+                              iana-compatible-name)]
+
+          (.write writer (format "%s,%s,%s\r\n"
+                                 range-str
+                                 prop-str
+                                 ;; Quote description if it contains commas
+                                 (if (str/includes? description ",")
+                                   (format "\"%s\"" description)
+                                   description))))))))
 
 (defn latest-unicode-version
   "Get the latest Unicode version from unicode.org by parsing the content of the latest page"
@@ -436,29 +552,3 @@
          (filter #(re-matches #"\d+\.\d+\.\d+" %))
          (sort version-compare)
          vec)))
-
-(defn compress-ranges
-  "Compress consecutive codepoints with same property into ranges"
-  [codepoint-props]
-  (let [sorted-cps (sort (keys codepoint-props))]
-    (loop [ranges        []
-           current-start nil
-           current-end   nil
-           current-prop  nil
-           remaining     sorted-cps]
-      (if (empty? remaining)
-        (if current-start
-          (conj ranges [current-start current-end current-prop])
-          ranges)
-        (let [cp   (first remaining)
-              prop (get codepoint-props cp)]
-          (if (and current-start
-                   (= prop current-prop)
-                   (= cp (inc current-end)))
-            ;; Extend current range
-            (recur ranges current-start cp prop (rest remaining))
-            ;; Start new range
-            (recur (if current-start
-                     (conj ranges [current-start current-end current-prop])
-                     ranges)
-                   cp cp prop (rest remaining))))))))

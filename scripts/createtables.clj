@@ -15,7 +15,7 @@
       (throw (ex-info "Unicode data directory not found"
                       {:version version :path version-dir})))
 
-    (let [unicode-data-file (str version-dir "/UnicodeData.txt")
+    (let [unicode-data-file  (str version-dir "/UnicodeData.txt")
           derived-props-file (str version-dir "/DerivedCoreProperties.txt")]
 
       (when-not (.exists (io/file unicode-data-file))
@@ -26,7 +26,7 @@
         (throw (ex-info "DerivedCoreProperties.txt not found"
                         {:version version :path derived-props-file})))
 
-      {:unicode-data (common/parse-unicode-data unicode-data-file)
+      {:unicode-data  (common/parse-unicode-data unicode-data-file)
        :derived-props (common/parse-derived-core-properties derived-props-file)})))
 
 (defn compute-all-precis-properties
@@ -35,12 +35,12 @@
   (println (format "Computing PRECIS properties for %,d codepoints..." (count all-codepoints)))
 
   ;; Use transient for efficiency during bulk construction
-  (loop [result (transient {})
+  (loop [result    (transient {})
          remaining all-codepoints
-         count 0]
+         count     0]
     (if (empty? remaining)
       (persistent! result)
-      (let [cp (first remaining)
+      (let [cp   (first remaining)
             ;; Use unified derive-precis-property function with version awareness
             prop (common/derive-precis-property unicode-data derived-props cp version)]
         (recur (assoc! result cp prop)
@@ -53,12 +53,12 @@
   ;; This is a simplified version - a full implementation would need
   ;; to track which specific RFC 8264 Section 9 rules were applied
   (case prop
-    :pvalid "AE"  ; Simplified - could be A, E, or both
-    :free-pval "O" ; Simplified
+    :pvalid     "AE"  ; Simplified - could be A, E, or both
+    :free-pval  "O" ; Simplified
     :disallowed ""
     :unassigned ""
-    :contextj "H"
-    :contexto "B"
+    :contextj   "H"
+    :contexto   "B"
     ""))
 
 (defn write-allcodepoints-txt
@@ -69,10 +69,10 @@
 
     (with-open [writer (io/writer output-file)]
       (doseq [cp all-codepoints]
-        (let [prop (get properties cp :unassigned)
+        (let [prop     (get properties cp :unassigned)
               prop-str (get common/precis-properties prop (str/upper-case (name prop)))
-              rules (determine-rules unicode-data derived-props cp prop)
-              name (common/get-character-name unicode-data cp)]
+              rules    (determine-rules unicode-data derived-props cp prop)
+              name     (common/get-character-name unicode-data cp)]
           (.write writer (format "%04X;%s;%s;%s\n"
                                  cp prop-str rules name)))))))
 
@@ -89,11 +89,11 @@
 
       ;; Simple implementation - just output first 100 codepoints as example
       (doseq [cp (take 100 all-codepoints)]
-        (let [prop (get properties cp :unassigned)
-              prop-str (get common/precis-properties prop (str/upper-case (name prop)))
-              rules (determine-rules unicode-data derived-props cp prop)
-              gc (get-in unicode-data [cp :general-category] "Cn")
-              name (common/get-character-name unicode-data cp)
+        (let [prop         (get properties cp :unassigned)
+              prop-str     (get common/precis-properties prop (str/upper-case (name prop)))
+              rules        (determine-rules unicode-data derived-props cp prop)
+              gc           (get-in unicode-data [cp :general-category] "Cn")
+              name         (common/get-character-name unicode-data cp)
               char-display (if (<= 0x20 cp 0x7E)
                              (format "&#x%04X;" cp)
                              "&nbsp;")]
@@ -115,11 +115,11 @@
 
       ;; Simple implementation - just output first 100 codepoints as example
       (doseq [cp (take 100 all-codepoints)]
-        (let [prop (get properties cp :unassigned)
-              prop-str (get common/precis-properties prop (str/upper-case (name prop)))
-              rules (determine-rules unicode-data derived-props cp prop)
-              gc (get-in unicode-data [cp :general-category] "Cn")
-              name (common/get-character-name unicode-data cp)
+        (let [prop         (get properties cp :unassigned)
+              prop-str     (get common/precis-properties prop (str/upper-case (name prop)))
+              rules        (determine-rules unicode-data derived-props cp prop)
+              gc           (get-in unicode-data [cp :general-category] "Cn")
+              name         (common/get-character-name unicode-data cp)
               char-display (if (<= 0x20 cp 0x7E)
                              (format "&#x%04X;" cp)
                              "&nbsp;")]
@@ -132,31 +132,31 @@
   "Write UCD-style range notation format"
   [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/xmlrfc.xml")
-        ranges (common/compress-ranges properties)]
+        ranges      (common/compress-ranges properties)]
     (println (format "  Writing xmlrfc.xml (%,d ranges)" (count ranges)))
 
     (with-open [writer (io/writer output-file)]
       (doseq [[start end prop] ranges]
-        (let [prop-str (get common/precis-properties prop (str/upper-case (name prop)))
-              range-str (if (= start end)
-                          (format "%04X" start)
-                          (format "%04X..%04X" start end))
+        (let [prop-str   (get common/precis-properties prop (str/upper-case (name prop)))
+              range-str  (if (= start end)
+                           (format "%04X" start)
+                           (format "%04X..%04X" start end))
               start-name (common/get-character-name unicode-data start)
-              end-name (if (= start end)
-                         start-name
-                         (common/get-character-name unicode-data end))
-              comment (if (= start end)
-                        start-name
-                        (format "%s..%s" start-name end-name))
+              end-name   (if (= start end)
+                           start-name
+                           (common/get-character-name unicode-data end))
+              comment    (if (= start end)
+                           start-name
+                           (format "%s..%s" start-name end-name))
               ;; Format with proper alignment
-              line (format "%-12s ; %-11s # %s" range-str prop-str comment)]
+              line       (format "%-12s ; %-11s # %s" range-str prop-str comment)]
           (.write writer (str line "\n")))))))
 
 (defn write-iana-xml
   "Write IANA XML registry format"
   [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/idnabis-tables.xml")
-        ranges (common/compress-ranges properties)]
+        ranges      (common/compress-ranges properties)]
     (println (format "  Writing idnabis-tables.xml (%,d records)" (count ranges)))
 
     (with-open [writer (io/writer output-file)]
@@ -164,70 +164,42 @@
       (.write writer "<registry xmlns=\"http://www.iana.org/assignments\" id=\"precis-tables\">\n")
 
       (doseq [[start end prop] ranges]
-        (let [prop-str (get common/precis-properties prop (str/upper-case (name prop)))
+        (let [prop-str      (get common/precis-properties prop (str/upper-case (name prop)))
               codepoint-str (if (= start end)
                               (format "%04X" start)
                               (format "%04X-%04X" start end))
-              start-name (common/get-character-name unicode-data start)
-              end-name (if (= start end)
-                         start-name
-                         (common/get-character-name unicode-data end))
-              description (if (= start end)
-                            start-name
-                            (format "%s..%s" start-name end-name))]
-          (.write writer "  <record>\n")
-          (.write writer (format "    <codepoint>%s</codepoint>\n" codepoint-str))
-          (.write writer (format "    <property>%s</property>\n" prop-str))
-          (.write writer (format "    <description>%s</description>\n" description))
-          (.write writer "  </record>\n")))
+              start-name    (common/get-character-name unicode-data start)
+              end-name      (if (= start end)
+                              start-name
+                              (common/get-character-name unicode-data end))
+              description   (if (= start end)
+                              start-name
+                              (format "%s..%s" start-name end-name))]
+          (.write writer "  <record>")
+          (.write writer (format "<codepoint>%s</codepoint>" codepoint-str))
+          (.write writer (format "<property>%s</property>" prop-str))
+          (.write writer (format "<description>%s</description>" description))
+          (.write writer "</record>\n")))
 
       (.write writer "</registry>\n"))))
-
-(defn write-iana-csv
-  "Write IANA CSV format with proper escaping"
-  [output-dir _version unicode-data properties]
-  (let [output-file (str output-dir "/iana.csv")
-        ranges (common/compress-ranges properties)]
-    (println (format "  Writing iana.csv (%,d records)" (count ranges)))
-
-    (with-open [writer (io/writer output-file)]
-      (doseq [[start end prop] ranges]
-        (let [prop-str (get common/precis-properties prop (str/upper-case (name prop)))
-              codepoint-str (if (= start end)
-                              (format "%04X" start)
-                              (format "%04X-%04X" start end))
-              start-name (common/get-character-name unicode-data start)
-              end-name (if (= start end)
-                         start-name
-                         (common/get-character-name unicode-data end))
-              description (if (= start end)
-                            start-name
-                            (format "%s..%s" start-name end-name))
-              ;; Escape description if it contains commas
-              escaped-desc (if (str/includes? description ",")
-                             (format "\"%s\"" description)
-                             description)]
-          (.write writer (format "%s,%s,%s\r\n" codepoint-str prop-str escaped-desc)))))))
 
 (defn generate-for-version
   "Generate all output formats for a specific Unicode version"
   [version]
   (println (format "Generating PRECIS tables for Unicode %s..." version))
 
-  (let [output-dir (str output-base-path "/" version)
+  (let [output-dir                           (str output-base-path "/" version)
         {:keys [unicode-data derived-props]} (load-unicode-data version)
-        properties (compute-all-precis-properties version unicode-data derived-props)]
+        properties                           (compute-all-precis-properties version unicode-data derived-props)]
 
-    ;; Create output directory
     (.mkdirs (io/file output-dir))
 
-    ;; Generate all output formats
     (write-allcodepoints-txt output-dir version unicode-data derived-props properties)
     (write-byscript-html output-dir version unicode-data derived-props properties)
     (write-bygc-html output-dir version unicode-data derived-props properties)
     (write-xmlrfc-xml output-dir version unicode-data properties)
     (write-iana-xml output-dir version unicode-data properties)
-    (write-iana-csv output-dir version unicode-data properties)
+    (common/write-iana-csv (str output-dir "/iana.csv") unicode-data properties)
 
     (println (format "Generated 6 files for Unicode %s in %s" version output-dir))))
 
@@ -253,9 +225,9 @@
                                (if (= (first args) "all")
                                  (get-available-versions)
                                  (vec args)))
-          available (set (get-available-versions))
-          valid-versions (filter available requested-versions)
-          invalid-versions (remove available requested-versions)]
+          available          (set (get-available-versions))
+          valid-versions     (filter available requested-versions)
+          invalid-versions   (remove available requested-versions)]
 
       ;; Report invalid versions
       (when (seq invalid-versions)
