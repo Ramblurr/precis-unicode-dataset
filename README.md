@@ -150,10 +150,22 @@ This change from disallowed to allowed is not a backwards incompatible change fo
 
 ##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
-I-D draft-nemoto-precis-unicode14-00 notes: "Unicode General Properties of `CANADIAN SYLLABICS CHI SIGN (U+166D)` was changed from `Po` to `So` in Unicode 12.0.0. This change has changed the basis for calculating of the derived property value from Punctuation (P) in Section 9.16 of RFC 8264 to Symbols (O) in Section 9.15 of RFC 8264. However, this change does not affect the calculation result."
+**Anomaly**
 
-- **Anomaly**: Despite I-D draft-nemoto-precis-unicode14-00 stating the change "does not affect the calculation result," the reference tables list this codepoint as transitioning from `UNASSIGNED` to `FREE_PVAL`
-- **Resolution**: Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency)
+In Unicode 12.0.0 the Unicode properties for U+166D were changed as documented in Unicode Technical Committee Meeting 157 decision [157-C16] [[L2/18-272]](#L2-18-272):
+the General Category was changed from Po (Other_Punctuation) to So (Other_Symbol), and the Terminal_Punctuation property was changed from Yes to No.
+
+I-D draft-nemoto-precis-unicode14-00 correctly notes that this property change "does not affect the calculation result" because both Po and So map to the same PRECIS derived property value (ID_DIS or FREE_PVAL).
+
+The change altered the basis for calculating the derived property value from Punctuation (P) in RFC 8264 Section 9.16 to Symbols (O) in RFC 8264 Section 9.15, but both categories result in ID_DIS or FREE_PVAL.
+
+Despite the theoretical equivalence, the reference tables (tables-extracted/changes-11.0.0-12.0.0-from-unassigned.txt) list this codepoint as transitioning from UNASSIGNED to FREE_PVAL, which represents a discrepancy between the documented impact assessment and the reference implementation data.
+
+**Resolution**
+
+Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency in reference implementation).
+
+This discrepancy has no practical impact on PRECIS implementations since the derived property value remains the same.
 
 #### 2. Undocumented Discrepancies
 
@@ -462,6 +474,12 @@ Whistler, K. and L. Iancu (2017).
 Proposed Property Changes for U+111C9 SHARADA SANDHI MARK.  
 Unicode Technical Committee Document L2/17-247.  
 <https://www.unicode.org/L2/L2017/17247-sharada-sandhi-prop-chg.txt>
+
+<a id="L2-18-272">[L2/18-272]</a>  
+Unicode Technical Committee (2018).  
+Approved Minutes of UTC Meeting 157.  
+Unicode Technical Committee Document L2/18-272.  
+<https://www.unicode.org/L2/L2018/18272.htm>
 
 <a id="IANA-PRECIS">[IANA-PRECIS]</a>  
 Internet Assigned Numbers Authority.  
