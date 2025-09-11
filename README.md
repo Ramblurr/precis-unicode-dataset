@@ -132,18 +132,21 @@ U+111C9 (SHARADA SANDHI MARK) was added in Unicode 8.0.0 and had the PRECIS Deri
 
 **Anomaly**
 
-However in Unicode version 11.0.0 SOMETHING CHANGED (TODO) and the derived property value has changed to PVALID.
+However in Unicode version 11.0.0 the Unicode properties for U+111C9 were changed as documented in Unicode proposal L2/17-247 [[L2/17-247]](#L2-17-247):
+the General Category was changed from Po (Other_Punctuation) to Mn (Nonspacing_Mark), and the Bidi property was changed from L (Left to Right) to NSM (Nonspacing Mark).
+This property change caused the derived property value to change to PVALID.
 
-This does not affect the PRECIS FreeformClass, but it does affect the IdentifierClass. (TODO: why?)
-
-From Unicode 8.0.0 through 10.0.0 U+111C9 was not allowed in the IdentifierClass.
-Starting with Unicode 11 this changed and U+111C9 is allowed.
-
-This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
+This does not affect the PRECIS FreeformClass, but it does affect the IdentifierClass.
+The IdentifierClass includes the LetterDigits (A) category as defined in RFC 8264 Section 9.1, which references RFC 5892 Section 2.1.
+The LetterDigits category explicitly includes Mn (Nonspacing_Mark) characters.
+When U+111C9 changed from Po to Mn, it became eligible for inclusion in IdentifierClass, changing its derived property value from ID_DIS or FREE_PVAL to PVALID.
 
 **Resolution**
 
-In Unicode version 11.0.0 U+111C9 is PVALID
+From Unicode 8.0.0 through 10.0.0 U+111C9 was not allowed in the IdentifierClass.
+Starting with Unicode 11 this changed and U+111C9 is allowed (PVALID).
+
+This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
 
 ##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
@@ -453,6 +456,12 @@ IAB Statement on Identifiers and Unicode 7.0.0.
 Internet Architecture Board (2015, February 11).  
 IAB Statement on Identifiers and Unicode 7.0.0.  
 <https://www.iab.org/documents/correspondence-reports-documents/2015-2/iab-statement-on-identifiers-and-unicode-7-0-0/>
+
+<a id="L2-17-247">[L2/17-247]</a>  
+Whistler, K. and L. Iancu (2017).  
+Proposed Property Changes for U+111C9 SHARADA SANDHI MARK.  
+Unicode Technical Committee Document L2/17-247.  
+<https://www.unicode.org/L2/L2017/17247-sharada-sandhi-prop-chg.txt>
 
 <a id="IANA-PRECIS">[IANA-PRECIS]</a>  
 Internet Assigned Numbers Authority.  
