@@ -1,30 +1,24 @@
 {:paths ["scripts"]
- :deps {}
+ :deps  {}
  :tasks {:requires ([babashka.fs :as fs])
-         submodules (shell "git submodule update --init --recursive")
-         download {:doc "Download Unicode data files, IANA tables, and other required reference sources"
-                   :depends [submodules]
-                   :task download/-main}
-
-         extract {:doc "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
-                  :depends [download]
-                  :task extract/-main}
-
-         generate {:doc "Generate PRECIS property tables using RFC 8264 algorithm from Unicode data"
-                   :depends [extract]
-                   :task generate/-main}
-
-         verify {:doc "Verify generated tables match extracted reference datasets using diff -w"
-                 :task verify/-main}
-
-         report {:doc "Generate analysis report of PRECIS property changes across Unicode versions"
-                 :task report/-main}
-
-         codepoint {:doc ""
+         download  {:doc  "Download Unicode data files, IANA tables, and other required reference sources"
+                    :task download/-main}
+         extract   {:doc     "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
+                    :depends [download]
+                    :task    extract/-main}
+         generate  {:doc     "Generate PRECIS property tables using RFC 8264 algorithm from Unicode data"
+                    :depends [extract]
+                    :task    generate/-main}
+         verify    {:doc  "Verify generated tables match extracted reference datasets using diff -w"
+                    :task verify/-main}
+         report    {:doc  "Generate analysis report of PRECIS property changes across Unicode versions"
+                    :task report/-main}
+         codepoint {:doc  "TODO"
                     :task codepoint/-main}
-         clean {:doc "Remove all generated directories (tables-extracted, tables-generated, scratch, data)"
-                :task (do
-                        (fs/delete-tree "tables-extracted")
-                        (fs/delete-tree "tables-generated")
-                        (fs/delete-tree "scratch")
-                        (fs/delete-tree "data"))}}}
+         clean     {:doc  "Remove all generated directories (reference/, tables/)"
+                    :task (do
+                            (fs/delete-tree "reference")
+                            (fs/delete-tree "tables"))}
+         distclean {:doc     "Remove all generated directories and downloaded Unicode data"
+                    :depends [clean]
+                    :task    (fs/delete-tree "data")}}}

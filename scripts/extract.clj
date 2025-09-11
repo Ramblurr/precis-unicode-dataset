@@ -123,7 +123,7 @@
 
 (defn -main [& args]
   (let [input-file "draft-nemoto-precis-unicode/draft-nemoto-precis-unicode.md"
-        output-dir "tables-extracted"]
+        output-dir "reference/tables-extracted"]
 
     ;; First fetch the IANA CSV
     (fetch-iana-csv output-dir)
