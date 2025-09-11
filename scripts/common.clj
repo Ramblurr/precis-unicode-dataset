@@ -498,6 +498,36 @@
                 (get-character-name unicode-data end)))
       iana-compatible-name))
 
+(defn ucd-style-name
+  "Get UCD-style character name for xmlrfc format"
+  [unicode-data cp]
+  (let [name      (get-in unicode-data [cp :name])
+        assigned? (contains? unicode-data cp)]
+    (cond
+      ;; Control characters
+      (= name "<control>") "<control>"
+
+      ;; Non-characters
+      (and assigned? (or (and (>= cp 0xFDD0) (<= cp 0xFDEF))
+                         (= (bit-and cp 0xFFFF) 0xFFFE)
+                         (= (bit-and cp 0xFFFF) 0xFFFF)))
+      "<noncharacter>"
+
+      ;; Unassigned/reserved
+      (not assigned?) "<reserved>"
+
+      ;; All others use regular name
+      :else (or name (format "<UNASSIGNED-%04X>" cp)))))
+
+(defn ucd-range-description
+  "Get UCD-style range description for xmlrfc format"
+  [unicode-data start end]
+  (if (= start end)
+    (ucd-style-name unicode-data start)
+    (format "%s..%s"
+            (ucd-style-name unicode-data start)
+            (ucd-style-name unicode-data end))))
+
 (defn write-iana-csv
   "Write IANA CSV format with proper escaping and range compression"
   [output-file unicode-data properties]

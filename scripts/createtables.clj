@@ -129,28 +129,33 @@
       (.write writer "</TABLE>\n</BODY></HTML>\n"))))
 
 (defn write-xmlrfc-xml
-  "Write UCD-style range notation format"
+  "Write UCD-style range notation format with XML wrapper elements"
   [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/xmlrfc.xml")
         ranges      (common/compress-ranges properties)]
     (println (format "  Writing xmlrfc.xml (%,d ranges)" (count ranges)))
 
     (with-open [writer (io/writer output-file)]
+      ;; XML wrapper elements
+      (.write writer "<section title=\"Codepoints in Unicode Character Database (UCD) format\">\n")
+      (.write writer "<figure><artwork>\n")
+
       (doseq [[start end prop] ranges]
-        (let [prop-str   (get common/precis-properties prop (str/upper-case (name prop)))
-              range-str  (if (= start end)
-                           (format "%04X" start)
-                           (format "%04X..%04X" start end))
-              start-name (common/get-character-name unicode-data start)
-              end-name   (if (= start end)
-                           start-name
-                           (common/get-character-name unicode-data end))
-              comment    (if (= start end)
-                           start-name
-                           (format "%s..%s" start-name end-name))
+        (let [prop-str  (get common/precis-properties prop (str/upper-case (name prop)))
+              range-str (if (= start end)
+                          (format "%04X" start)
+                          (format "%04X..%04X" start end))
+              comment   (-> (common/ucd-range-description unicode-data start end)
+                             ;; XML entity escaping
+                            (str/replace "&" "&amp;")
+                            (str/replace "<" "&lt;")
+                            (str/replace ">" "&gt;"))
               ;; Format with proper alignment
-              line       (format "%-12s ; %-11s # %s" range-str prop-str comment)]
-          (.write writer (str line "\n")))))))
+              line      (format "%-12s; %-11s # %s" range-str prop-str comment)]
+          (.write writer (str line "\n"))))
+
+      ;; Close XML wrapper elements
+      (.write writer "</artwork></figure></section>\n"))))
 
 (defn write-iana-xml
   "Write IANA XML registry format"
