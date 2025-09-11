@@ -16,12 +16,11 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [Reference Standards](#reference-standards)
     - [Generated Outputs](#generated-outputs)
   - [Findings](#findings)
-    - [Discrepancies](#discrepancies)
-      - [1. Documented Discrepancies](#1-documented-discrepancies)
-        - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
-        - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
-      - [2. Undocumented Discrepancies](#2-undocumented-discrepancies)
-        - [U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0](#u180f-mongolian-free-variation-selector-four---unicode-1300--1400)
+    - [1. Documented Discrepancies](#1-documented-discrepancies)
+      - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
+      - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
+    - [2. Undocumented Discrepancies](#2-undocumented-discrepancies)
+      - [U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0](#u180f-mongolian-free-variation-selector-four---unicode-1300--1400)
     - [Implementation Notes](#implementation-notes)
   - [Overview of Changes Between Unicode 6.3.0 and 17.0.0](#overview-of-changes-between-unicode-630-and-1700)
     - [Changes between Unicode 6.3.0 and 7.0.0](#changes-between-unicode-630-and-700)
@@ -116,17 +115,15 @@ The generated datasets can be used to support:
 
 ## Findings
 
-### Discrepancies
-
 During implementation, we discovered several codepoints that require special handling to match the reference data from [[NEMOTO-DRAFT]](#NEMOTO-DRAFT). 
 These fall into two categories: 
 
 1. Documented  discrepancies: These codepoints are explicitly discussed in I-D draft-nemoto-precis-unicode14-00
 1. Undocumented discrepancies: These codepoints represent cases where our algorithmic derivation differs from the reference tables without explanation in the I-D
 
-#### 1. Documented Discrepancies
+### 1. Documented Discrepancies
 
-##### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
+#### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
 
 U+111C9 (SHARADA SANDHI MARK) was added in Unicode 8.0.0 and had the PRECIS Derived Property Value of ID_DIS or FREE_PVAL.
 
@@ -148,7 +145,7 @@ Starting with Unicode 11 this changed and U+111C9 is allowed (PVALID).
 
 This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
 
-##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
+#### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
 **Anomaly**
 
@@ -167,14 +164,16 @@ Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference table
 
 This discrepancy has no practical impact on PRECIS implementations since the derived property value remains the same.
 
-#### 2. Undocumented Discrepancies
+### 2. Undocumented Discrepancies
 
 
-##### U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0
+#### U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0
 
 U+180F, MONGOLIAN FREE VARIATION SELECTOR FOUR (FVS4) is assigned in Unicode 14.0.0 with `General_Category=Mn` (Nonspacing Mark).
 
-**Anomaly**:  Following RFC 8264 Section 8's algorithm, `Mn` is included in [[LetterDigits (RFC 8264 Section 9.1)]](#RFC8264-SECTION91) which forwards to [[RFC 5892 2.1]](#RFC5892-SECTION21), which results in PVALID categorization.
+**Anomaly**
+
+Following RFC 8264 Section 8's algorithm, `Mn` is included in [[LetterDigits (RFC 8264 Section 9.1)]](#RFC8264-SECTION91) which forwards to [[RFC 5892 2.1]](#RFC5892-SECTION21), which results in PVALID categorization.
 
 Yet I-D draft-nemoto-precis-unicode14-00 categorizes FVS4 as DISALLOWED.
 The I-D does not explain why this character should be DISALLOWED rather than the algorithmically derived PVALID.
@@ -185,7 +184,9 @@ It is not clear what rules or source material were considered in the constructio
 A review of RFC 5892, its [[errata]](#RFC5892-ERRATA), and the update in [[RFC 8753]](#RFC8753) do not shed any light on the mystery.
 
 
-**Resolution**: Override the algorithmic derivation to force DISALLOWED
+**Resolution**
+
+Override the algorithmic derivation to force DISALLOWED
 
 The DISALLOWED resolution is supported by two key factors:
 
@@ -193,7 +194,7 @@ The DISALLOWED resolution is supported by two key factors:
 2. Practical usage considerations, as the [[Unicode proposal for FVS4]](#FVS4-PROPOSAL) states it "would only be needed by pre-contemporary, historical texts," indicating this character is not intended for modern text input that would appear in PRECIS systems like usernames, identifiers, or passwords
 
 
-**Open Questions**:
+**Open Questions**
 
 1. Is the IANA precis-tables-6.3.0 registry normative with respect to RFC 8264?
 2. Why were codepoints U+180B-180D MONGOLIAN FREE VARIATION SELECTOR ONE through THREE (FVS1 - FVS3) categorized as DISALLOWED in IANA precis-tables-6.3.0?
@@ -438,6 +439,11 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
 
     # Update the report
     bb report
+
+    # Get a report on a specific codepoint
+    bb codepoint <codepoint>
+    # Eample
+    bb codepoint 111C9
     ```
 
 ## Project Structure
