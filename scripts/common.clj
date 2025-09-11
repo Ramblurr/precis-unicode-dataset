@@ -490,6 +490,14 @@
             ;; All other unassigned codepoints
             :else (format "<UNASSIGNED-%04X>" cp))))))
 
+(defn iana-range-description [unicode-data start end]
+  (-> (if (= start end)
+        (get-character-name unicode-data start)
+        (format "%s..%s"
+                (get-character-name unicode-data start)
+                (get-character-name unicode-data end)))
+      iana-compatible-name))
+
 (defn write-iana-csv
   "Write IANA CSV format with proper escaping and range compression"
   [output-file unicode-data properties]
@@ -511,13 +519,7 @@
                             :contextj   "CONTEXTJ"
                             :contexto   "CONTEXTO"
                             (str/upper-case (name prop)))
-              ;; Generate description with IANA-compatible name processing
-              description (-> (if (= start end)
-                                (get-character-name unicode-data start)
-                                (format "%s..%s"
-                                        (get-character-name unicode-data start)
-                                        (get-character-name unicode-data end)))
-                              iana-compatible-name)]
+              description (iana-range-description unicode-data start end)]
 
           (.write writer (format "%s,%s,%s\r\n"
                                  range-str

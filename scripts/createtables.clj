@@ -168,13 +168,11 @@
               codepoint-str (if (= start end)
                               (format "%04X" start)
                               (format "%04X-%04X" start end))
-              start-name    (common/get-character-name unicode-data start)
-              end-name      (if (= start end)
-                              start-name
-                              (common/get-character-name unicode-data end))
-              description   (if (= start end)
-                              start-name
-                              (format "%s..%s" start-name end-name))]
+              description   (-> (common/iana-range-description unicode-data start end)
+                                (str/replace "&" "&amp;")
+                                (str/replace "<" "&lt;")
+                                (str/replace ">" "&gt;")
+                                (str/replace "\"" "&quot;"))]
           (.write writer "  <record>")
           (.write writer (format "<codepoint>%s</codepoint>" codepoint-str))
           (.write writer (format "<property>%s</property>" prop-str))
