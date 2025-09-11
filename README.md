@@ -72,6 +72,7 @@ This creates the potential for spoofing in identifiers, because two visually ind
 
 For IDNA2008, the IETF studied the problem and decided that no exception should be introduced, leaving U+08A1 as PVALID and relying on strengthened review processes defined in RFC 8753 [[RFC9233]](#RFC9233).
 RFC 9233 documented this outcome and explicitly recognized that U+08A1 is not an isolated case, since similar combining issues exist elsewhere in Unicode (though the RFC does not list any).
+
 For PRECIS, however, no update has been published beyond RFC 8264, and the framework has not yet been aligned to newer Unicode versions in IANA registries [[RFC8264]](#RFC8264).
 
 This means the question of how to handle U+08A1 and similar cases remains unresolved in PRECIS, at least at the standards level.
@@ -79,7 +80,7 @@ Applications and profiles that use PRECIS may need to impose their own restricti
 
 The facts are clear: PRECIS permits both forms as valid, Unicode normalization does not unify them, and the potential for confusion remains.
 
-Whether this is regarded as a "solved" problem for PRECIS is therefore an open question, and the implications must be weighed by implementers and reviewers in each deployment context
+Whether this is regarded as a "solved" problem for PRECIS is therefore an open question, and the implications must be weighed by implementers and reviewers.
 
 In any case, this project is not focused on the hamza problem and mentions it as an important other open question in this space.
 
@@ -126,11 +127,23 @@ These fall into two categories:
 #### 1. Documented Discrepancies
 
 ##### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
-I-D draft-nemoto-precis-unicode14-00 explicitly states: "Change of `SHARADA SANDHI MARK (U+111C9)` added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass.
-PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 is `ID_DIS` or `FREE_PVAL`, however in Unicode 11.0.0 is PVALID."
 
-- **Anomaly**: This codepoint appears in both "Changes from derived property value UNASSIGNED" and "Changes from derived property value `ID_DIS` or `FREE_PVAL` to PVALID" sections of the reference tables
-- **Resolution**: The reference tables list the same codepoint in two different sections (possibly an error in the document), we replicate this behavior exactly
+U+111C9 (SHARADA SANDHI MARK) was added in Unicode 8.0.0 and had the PRECIS Derived Property Value of ID_DIS or FREE_PVAL.
+
+**Anomaly**
+
+However in Unicode version 11.0.0 SOMETHING CHANGED (TODO) and the derived property value has changed to PVALID.
+
+This does not affect the PRECIS FreeformClass, but it does affect the IdentifierClass. (TODO: why?)
+
+From Unicode 8.0.0 through 10.0.0 U+111C9 was not allowed in the IdentifierClass.
+Starting with Unicode 11 this changed and U+111C9 is allowed.
+
+This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
+
+**Resolution**
+
+In Unicode version 11.0.0 U+111C9 is PVALID
 
 ##### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
@@ -157,9 +170,7 @@ It is not clear what rules or source material were considered in the constructio
 A review of RFC 5892, its [[errata]](#RFC5892-ERRATA), and the update in [[RFC 8753]](#RFC8753) do not shed any light on the mystery.
 
 
-**Resolution**: Override the algorithmic derivation to force DISALLOWED to match reference tables
-
-The classification as DISALLOWED follows established IETF expert precedent: FVS1-3 (U+180B-180D) are classified as DISALLOWED in IANA PRECIS tables despite having identical Unicode properties (General Category "Mn") that would algorithmically produce PVALID. 
+**Resolution**: Override the algorithmic derivation to force DISALLOWED
 
 The DISALLOWED resolution is supported by two key factors:
 
