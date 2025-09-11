@@ -1,7 +1,7 @@
 #!/usr/bin/env bb
 (ns verify
   (:require
-   [generate :refer [load-iana-csv expand-iana-ranges-to-codepoints]]
+   [common :as common]
    [babashka.process :as p]
    [clojure.java.io :as io]
    [clojure.string :as str]
@@ -81,8 +81,8 @@
     (if (.exists (io/file iana-file))
       (do
         (println (format "Loading IANA PRECIS tables from: %s" iana-file))
-        (let [iana-data (load-iana-csv iana-file)
-              iana-mappings (expand-iana-ranges-to-codepoints iana-data)
+        (let [iana-data (common/load-iana-csv iana-file)
+              iana-mappings (common/expand-iana-ranges-to-codepoints iana-data)
 
               mappings-file (str tables-new-dir "/precis-mappings-6.3.0.edn")
               our-mappings (read-string (slurp mappings-file))

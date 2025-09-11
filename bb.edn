@@ -6,15 +6,17 @@
          extract   {:doc     "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
                     :depends [download]
                     :task    extract/-main}
-         generate  {:doc     "Generate PRECIS property tables using RFC 8264 algorithm from Unicode data"
+         changes   {:doc     "Generate PRECIS change tables and verification data using RFC 8264 algorithm"
                     :depends [extract]
-                    :task    generate/-main}
-         verify    {:doc  "Verify generated tables match extracted reference datasets using diff -w"
+                    :task    changes/-main}
+         verify    {:doc  "Verify generated tables match extracted reference datasets"
                     :task verify/-main}
          report    {:doc  "Generate analysis report of PRECIS property changes across Unicode versions"
                     :task report/-main}
-         codepoint {:doc  "TODO"
+         codepoint {:doc  "Analyze and diagnose PRECIS classification for a specific codepoint across Unicode versions"
                     :task codepoint/-main}
+         createtables {:doc "Generate pristine PRECIS datasets for specified Unicode versions"
+                       :task createtables/-main}
          clean     {:doc  "Remove all generated directories (reference/, tables/)"
                     :task (do
                             (fs/delete-tree "reference")

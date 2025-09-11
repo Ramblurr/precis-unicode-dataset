@@ -208,7 +208,7 @@ The DISALLOWED resolution is supported by two key factors:
 
 ### Implementation Notes
 
-These special cases are handled in `scripts/generate.clj` within the change table generation logic.
+These special cases are handled in `scripts/common.clj` within the unified PRECIS derivation function.
 They are evaluated before the general change detection logic to ensure proper precedence. 
 
 The undocumented discrepancies may represent:
@@ -422,23 +422,27 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
     $ bb tasks
     The following tasks are available:
 
-    submodules
-    download   Download Unicode data files, IANA tables, and other required reference sources
-    extract    Extract reference datasets from T. Nemoto draft and IANA PRECIS tables
-    generate   Generate PRECIS property tables using RFC 8264 algorithm from Unicode data
-    verify     Verify generated tables match extracted reference datasets using diff -w
-    report     Generate analysis report of PRECIS property changes across Unicode versions
-    clean      Remove all generated directories (tables-extracted, tables-generated, scratch, data)
-
+    download     Download Unicode data files, IANA tables, and other required reference sources
+    extract      Extract reference datasets from T. Nemoto draft and IANA PRECIS tables
+    changes      Generate PRECIS change tables and verification data using RFC 8264 algorithm
+    verify       Verify generated tables match extracted reference datasets
+    report       Generate analysis report of PRECIS property changes across Unicode versions
+    codepoint    Analyze and diagnose PRECIS classification for a specific codepoint across Unicode versions
+    createtables Generate pristine PRECIS datasets for specified Unicode versions
+    clean        Remove all generated directories (reference/, tables/)
+    distclean    Remove all generated directories and downloaded Unicode data
     ```
 
 2. Generate and validate datasets:
     ```bash
+    # Download data from the unicode Consortium
+    bb download
+
     # Extract reference data
     bb extract
 
-    # Generate new datasets
-    bb generate
+    # Generate change analysis and verification datasets
+    bb changes
 
     # Verify against reference
     bb verify
@@ -448,16 +452,95 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
 
     # Get a report on a specific codepoint
     bb codepoint <codepoint>
-    # Eample
+    # Example
     bb codepoint 111C9
+
+    # Calculate derived property values (into tables/)
+    bb createtables # all version
+    bb createtables 11.0.0
     ```
 
 ## Project Structure
 
 - `scripts/` - Data generation and validation scripts
-- `tables-extracted/` - Reference datasets from [[T. Nemoto draft]](#NEMOTO-DRAFT) and [[IANA's precis-tables]](#IANA-PRECIS)
-- `tables-generated/` - Generated datasets that should match the extracted ones
-- `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions (**TODO**: this is not yet done)
+- `reference/` - Reference and verification data
+  - `tables-extracted/` - Reference datasets from [[T. Nemoto draft]](#NEMOTO-DRAFT) and [[IANA's precis-tables]](#IANA-PRECIS)
+  - `tables-generated/` - Generated datasets for verification against extracted references
+- `data/` - Unicode data files from UCD
+  - `[version]/` - Per-Unicode version (e.g., 6.3.0, 17.0.0)
+    - Unicode source files (UnicodeData.txt, DerivedCoreProperties.txt, etc.)
+- `tables/` - Unicode data files and generated PRECIS datasets
+  - `[version]/` - Per-Unicode version (e.g., 6.3.0, 17.0.0)
+    - allcodepoints.txt, byscript.html, bygc.html, xmlrfc.xml, idnabis-tables.xml, iana.csv
+
+## Generated Dataset Formats
+
+The PRECIS derived property values are generated for each Unicode version in multiple formats into the `tables/[version]/` dir
+
+### Derived Property Values
+
+Codepoints can have the following derived property values:
+
+- **PVALID**: The code point is allowed in any PRECIS string class
+- **ID_DIS or FREE_PVAL**: The code point is disallowed in the IdentifierClass but allowed in the FreeformClass
+- **DISALLOWED**: The code point is disallowed in all PRECIS string classes
+- **UNASSIGNED**: The code point is not assigned by Unicode Consortium and cannot be used in PRECIS
+- **CONTEXTJ**: The code point must be checked according to contextual rules for join controls
+- **CONTEXTO**: The code point must be checked according to contextual rules for other code points than join controls
+
+### Output Files
+
+#### `allcodepoints.txt`
+One line per codepoint with four semicolon-separated fields:
+1. Codepoint in hex
+2. Derived property value
+3. Rules in PRECIS that match
+4. Name of character
+
+Example:
+```
+003F;DISALLOWED;;QUESTION MARK
+0040;DISALLOWED;;COMMERCIAL AT
+0041;ID_DIS;AB;LATIN CAPITAL LETTER A
+0042;ID_DIS;AB;LATIN CAPITAL LETTER B
+```
+
+#### `byscript.html` and `bygc.html`
+HTML tables with code points sorted by script or general category, containing:
+1. Codepoint in hex
+2. Character itself
+3. Derived property value
+4. Rules in PRECIS that match
+5. General Category (Gc) value
+6. Name of character
+
+#### `xmlrfc.xml`
+All code points in Unicode Character Database (UCD) format:
+```
+0000..002C  ; DISALLOWED  # <control>..COMMA
+002D        ; PVALID      # HYPHEN-MINUS
+002E..002F  ; DISALLOWED  # FULL STOP..SOLIDUS
+0030..0039  ; PVALID      # DIGIT ZERO..DIGIT NINE
+```
+
+#### `idnabis-tables.xml`
+All code points in the XML format IANA uses:
+```xml
+<record>
+  <codepoint>018C-018D</codepoint>
+  <property>PVALID</property>
+  <description>LATIN SMALL LETTER D WITH TOPBAR..LATIN SMALL LETTER TURNED DELTA</description>
+</record>
+```
+
+#### `iana.csv`
+All code points in CSV format that IANA uses:
+```
+0000-002C,DISALLOWED,NULL..COMMA
+002D,PVALID,HYPHEN-MINUS
+002E-002F,DISALLOWED,FULL STOP..SOLIDUS
+0030-0039,PVALID,DIGIT ZERO..DIGIT NINE
+```
 
 ## References
 
