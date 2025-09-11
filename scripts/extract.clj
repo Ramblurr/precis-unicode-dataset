@@ -80,12 +80,10 @@
                 (println "Skipping table in UCD section with" (count table-lines) "lines")
                 (recur (rest lines) current-section false [] table-counter (conj all-lines-so-far line) skip-tables))
               (do
-                (println "Ending table for section:" current-section "with" (count table-lines) "lines")
                 ;; Write the table immediately with appropriate suffix
                 (let [table-type (determine-table-type all-lines-so-far)
                       filename (str "changes-" current-section "-" table-type ".txt")
                       filepath (str output-dir "/" filename)]
-                  (println "Writing" filepath)
                   (spit filepath (str/join "\n" table-lines)))
                 ;; Continue processing in same section for additional tables
                 (recur (rest lines) current-section false [] (inc table-counter) (conj all-lines-so-far line) skip-tables))))

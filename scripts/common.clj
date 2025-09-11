@@ -1,21 +1,22 @@
-#!/usr/bin/env bb
 (ns common
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.data.csv :as csv]))
+            [clojure.data.csv :as csv]
+            [babashka.http-client :as http]))
 
-;; Constants
+;; All Unicode codepoints 0x0000 to 0x10FFFF
+(def all-codepoints (range 0x0000 0x110000))
+
 (def precis-properties
-  {:pvalid "PVALID"
-   :free-pval "FREE_PVAL"
+  {:pvalid     "PVALID"
+   :free-pval  "FREE_PVAL"
    :disallowed "DISALLOWED"
    :unassigned "UNASSIGNED"
-   :contextj "CONTEXTJ"
-   :contexto "CONTEXTO"})
+   :contextj   "CONTEXTJ"
+   :contexto   "CONTEXTO"})
 
 (def scratch-dir "reference/scratch")
 
-;; Utility functions
 (defn parse-hex
   "Parse a hexadecimal string to integer"
   [hex-str]
@@ -43,16 +44,22 @@
     (hex-format start)
     (str (hex-format start) ".." (hex-format end))))
 
-;; Version comparison utilities
 (defn parse-version
   "Parse version string like '6.3.0' into comparable vector [6 3 0]"
   [version-str]
-  (mapv #(Integer/parseInt %) (str/split version-str #"\.")))
+  (when (and version-str (not (str/blank? version-str)))
+    (mapv #(Integer/parseInt %) (str/split version-str #"\."))))
 
 (defn version-compare
   "Compare two version strings. Returns -1, 0, or 1"
   [v1 v2]
-  (compare (parse-version v1) (parse-version v2)))
+  (let [parsed-v1 (parse-version v1)
+        parsed-v2 (parse-version v2)]
+    (cond
+      (and parsed-v1 parsed-v2) (compare parsed-v1 parsed-v2)
+      parsed-v1 -1  ; v1 is valid, v2 is not
+      parsed-v2 1   ; v2 is valid, v1 is not
+      :else 0)))    ; both are invalid
 
 (defn version-gte?
   "Check if version v1 is greater than or equal to v2"
@@ -64,7 +71,6 @@
   [v1 v2]
   (< (version-compare v1 v2) 0))
 
-;; Unicode file parsers
 (defn parse-unicode-data
   "Parse UnicodeData.txt file into a map of codepoint -> properties"
   [unicode-data-file]
@@ -72,31 +78,31 @@
     (reduce
      (fn [acc line]
        (when-not (or (str/blank? line) (str/starts-with? line "#"))
-         (let [fields (str/split line #";")
-               cp-str (nth fields 0)
-               name (nth fields 1)
+         (let [fields           (str/split line #";")
+               cp-str           (nth fields 0)
+               name             (nth fields 1)
                general-category (nth fields 2)
-               decomp (nth fields 5)]
+               decomp           (nth fields 5)]
            (if (str/ends-with? name ", First>")
-              ;; Range start - store for next line
-             (assoc acc :range-start {:cp (parse-hex cp-str)
-                                      :gc general-category
+             ;; Range start - store for next line
+             (assoc acc :range-start {:cp     (parse-hex cp-str)
+                                      :gc     general-category
                                       :decomp decomp})
              (if (str/ends-with? name ", Last>")
-                ;; Range end - apply to range
+               ;; Range end - apply to range
                (let [{:keys [cp gc decomp]} (:range-start acc)
-                     start-cp cp
-                     end-cp (parse-hex cp-str)]
+                     start-cp               cp
+                     end-cp                 (parse-hex cp-str)]
                  (-> acc
                      (dissoc :range-start)
                      (as-> m (reduce #(assoc %1 %2 {:general-category gc
-                                                    :decomposition decomp})
+                                                    :decomposition    decomp})
                                      m (range start-cp (inc end-cp))))))
-                ;; Regular entry
+               ;; Regular entry
                (assoc acc (parse-hex cp-str)
                       {:general-category general-category
-                       :decomposition decomp
-                       :name name}))))))
+                       :decomposition    decomp
+                       :name             name}))))))
      {}
      (line-seq reader))))
 
@@ -108,25 +114,25 @@
      (fn [acc line]
        (when-not (or (str/blank? line) (str/starts-with? line "#"))
          (let [[cp-range property comment] (map str/trim (str/split line #";"))
-               [start end] (parse-codepoint-range cp-range)]
+               [start end]                 (parse-codepoint-range cp-range)]
            (update acc (keyword (str/lower-case property))
                    (fnil into #{}) (range start (inc end)))))
        acc)
      {}
      (line-seq reader))))
 
-(defn parse-blocks
-  "Parse Blocks.txt for block information"
-  [file]
-  (with-open [reader (io/reader file)]
-    (reduce
-     (fn [acc line]
-       (when-not (or (str/blank? line) (str/starts-with? line "#"))
-         (let [[range-str block-name] (map str/trim (str/split line #";"))
-               [start end] (parse-codepoint-range range-str)]
-           (reduce #(assoc %1 %2 block-name) acc (range start (inc end))))))
-     {}
-     (line-seq reader))))
+#_(defn parse-blocks
+    "Parse Blocks.txt for block information"
+    [file]
+    (with-open [reader (io/reader file)]
+      (reduce
+       (fn [acc line]
+         (when-not (or (str/blank? line) (str/starts-with? line "#"))
+           (let [[range-str block-name] (map str/trim (str/split line #";"))
+                 [start end]            (parse-codepoint-range range-str)]
+             (reduce #(assoc %1 %2 block-name) acc (range start (inc end))))))
+       {}
+       (line-seq reader))))
 
 ;; PRECIS Category Detection (RFC 8264 Section 9)
 
@@ -175,16 +181,16 @@
   (let [decomp (get-in unicode-data [cp :decomposition])]
     (and (not (str/blank? decomp))
          (or
-           ;; Has explicit compatibility tag like <font>, <square>, etc.
+          ;; Has explicit compatibility tag like <font>, <square>, etc.
           (str/starts-with? decomp "<")
-           ;; CJK compatibility ideographs in specific ranges
-          (and (re-matches #"[0-9A-F]+" decomp) ; Single codepoint decomposition
-               (or (<= 0xF900 cp 0xFAFF) ; CJK Compatibility Ideographs
-                   (<= 0x2F800 cp 0x2FA1F))) ; CJK Compatibility Ideographs Supplement
-           ;; Specific compatibility characters with direct mappings
-          (contains? #{0x2126 ; OHM SIGN -> GREEK CAPITAL LETTER OMEGA
-                       0x212A ; KELVIN SIGN -> LATIN CAPITAL LETTER K
-                       0x212B} ; ANGSTROM SIGN -> LATIN CAPITAL LETTER A WITH RING ABOVE
+          ;; CJK compatibility ideographs in specific ranges
+          (and (re-matches #"[0-9A-F]+" decomp) ;; Single codepoint decomposition
+               (or (<= 0xF900 cp 0xFAFF)        ;; CJK Compatibility Ideographs
+                   (<= 0x2F800 cp 0x2FA1F)))    ;; CJK Compatibility Ideographs Supplement
+          ;; Specific compatibility characters with direct mappings
+          (contains? #{0x2126  ;; OHM SIGN -> GREEK CAPITAL LETTER OMEGA
+                       0x212A  ;; KELVIN SIGN -> LATIN CAPITAL LETTER K
+                       0x212B} ;; ANGSTROM SIGN -> LATIN CAPITAL LETTER A WITH RING ABOVE
                      cp)))))
 
 (defn precis-ignorable?
@@ -206,9 +212,9 @@
 (defn old-hangul-jamo?
   "OldHangulJamo (I): Hangul Jamo code points"
   [cp]
-  (or (<= 0x1100 cp 0x11FF) ; Hangul Jamo
-      (<= 0xA960 cp 0xA97F) ; Hangul Jamo Extended-A  
-      (<= 0xD7B0 cp 0xD7FF))) ; Hangul Jamo Extended-B
+  (or (<= 0x1100 cp 0x11FF)   ;; Hangul Jamo
+      (<= 0xA960 cp 0xA97F)   ;; Hangul Jamo Extended-A
+      (<= 0xD7B0 cp 0xD7FF))) ;; Hangul Jamo Extended-B
 
 (defn exceptions-value
   "Handle exceptions per RFC 5892 Section 2.6"
@@ -216,16 +222,16 @@
   (cond
     (contains? #{0x00DF 0x03C2 0x06FD 0x06FE 0x0F0B 0x3007} cp) :pvalid
     (contains? #{0x00B7 0x0375 0x05F3 0x05F4 0x30FB} cp)        :contexto
-    (or (<= 0x0660 cp 0x0669)  ;; ARABIC-INDIC DIGITS
-        (<= 0x06F0 cp 0x06F9)) ;; EXTENDED ARABIC-INDIC DIGITS
+    (or (<= 0x0660 cp 0x0669)                       ;; ARABIC-INDIC DIGITS
+        (<= 0x06F0 cp 0x06F9))                      ;; EXTENDED ARABIC-INDIC DIGITS
     :contexto
 
-    (contains? #{0x0640 ;; ARABIC TATWEEL
-                 0x07FA ;; NKO LAJANYALAN
-                 0x302E ;; HANGUL SINGLE DOT TONE MARK
-                 0x302F ;; HANGUL DOUBLE DOT TONE MARK
+    (contains? #{0x0640                             ;; ARABIC TATWEEL
+                 0x07FA                             ;; NKO LAJANYALAN
+                 0x302E                             ;; HANGUL SINGLE DOT TONE MARK
+                 0x302F                             ;; HANGUL DOUBLE DOT TONE MARK
                  0x3031 0x3032 0x3033 0x3034 0x3035 ;; Vertical kana repeat marks
-                 0x303B} cp) ;; VERTICAL IDEOGRAPHIC ITERATION MARK
+                 0x303B} cp)                        ;; VERTICAL IDEOGRAPHIC ITERATION MARK
     :disallowed
 
     :else nil))
@@ -236,21 +242,21 @@
   [unicode-data derived-props cp]
   (let [assigned? (contains? unicode-data cp)]
     (cond
-      (exceptions-value cp) (exceptions-value cp)
+      (exceptions-value cp)                  (exceptions-value cp)
       ;; backwards compatible omitted
-      (not assigned?) :unassigned
-      (ascii7? cp) :pvalid
-      (join-control? cp) :contextj
-      (old-hangul-jamo? cp) :disallowed
-      (precis-ignorable? derived-props cp) :disallowed
-      (control? unicode-data cp) :disallowed
-      (has-compat? unicode-data cp) :free-pval
-      (letter-digits? unicode-data cp) :pvalid
+      (not assigned?)                        :unassigned
+      (ascii7? cp)                           :pvalid
+      (join-control? cp)                     :contextj
+      (old-hangul-jamo? cp)                  :disallowed
+      (precis-ignorable? derived-props cp)   :disallowed
+      (control? unicode-data cp)             :disallowed
+      (has-compat? unicode-data cp)          :free-pval
+      (letter-digits? unicode-data cp)       :pvalid
       (other-letter-digits? unicode-data cp) :free-pval
-      (spaces? unicode-data cp) :free-pval
-      (symbols? unicode-data cp) :free-pval
-      (punctuation? unicode-data cp) :free-pval
-      :else :disallowed)))
+      (spaces? unicode-data cp)              :free-pval
+      (symbols? unicode-data cp)             :free-pval
+      (punctuation? unicode-data cp)         :free-pval
+      :else                                  :disallowed)))
 
 ;; IANA CSV processing functions
 (defn parse-codepoint-range-iana
@@ -270,8 +276,8 @@
   (when-not (= codepoint-str "Codepoint") ; Skip header
     (let [range (parse-codepoint-range-iana codepoint-str)]
       {:codepoint-range range
-       :property property
-       :description description})))
+       :property        property
+       :description     description})))
 
 (defn load-iana-csv
   "Load and parse the IANA CSV file."
@@ -286,11 +292,11 @@
   [property]
   (case property
     "ID_DIS or FREE_PVAL" :free-pval
-    "PVALID" :pvalid
-    "DISALLOWED" :disallowed
-    "UNASSIGNED" :unassigned
-    "CONTEXTJ" :contextj
-    "CONTEXTO" :contexto
+    "PVALID"              :pvalid
+    "DISALLOWED"          :disallowed
+    "UNASSIGNED"          :unassigned
+    "CONTEXTJ"            :contextj
+    "CONTEXTO"            :contexto
     (keyword (str/lower-case property))))
 
 (defn expand-iana-ranges-to-codepoints
@@ -299,14 +305,13 @@
   (reduce
    (fn [acc {:keys [codepoint-range property description]}]
      (let [{:keys [start end]} codepoint-range
-           normalized-prop (normalize-property-name property)]
+           normalized-prop     (normalize-property-name property)]
        (reduce #(assoc %1 %2 normalized-prop)
                acc
                (range start (inc end)))))
    {}
    iana-data))
 
-;; Cached IANA exceptions loading
 (def iana-exceptions-cache (atom nil))
 
 (defn load-iana-exceptions-cached
@@ -315,13 +320,13 @@
   (when (nil? @iana-exceptions-cache)
     (let [iana-file (str scratch-dir "/precis-tables-6.3.0.csv")]
       (if (.exists (io/file iana-file))
-        (let [iana-data (load-iana-csv iana-file)
+        (let [iana-data      (load-iana-csv iana-file)
               exceptions-map (atom {})]
           ;; Process IANA data to extract ALL characters with explicit property classifications
           ;; This includes CONTEXTO, CONTEXTJ, FREE_PVAL, DISALLOWED, PVALID, and UNASSIGNED
           (doseq [{:keys [codepoint-range property]} iana-data]
             (let [{:keys [start end]} codepoint-range
-                  normalized-prop (normalize-property-name property)]
+                  normalized-prop     (normalize-property-name property)]
               ;; Store ALL character classifications to override algorithmic derivation
               (doseq [cp (range start (inc end))]
                 (swap! exceptions-map assoc cp normalized-prop))))
@@ -345,34 +350,34 @@
    - U+111C9: Sharada Sandhi Mark transitions FREE_PVAL->PVALID in Unicode 11.0.0
    - U+166D: Canadian Syllabics Chi Sign (documented transition case)"
   [unicode-data derived-props cp version]
-  (let [assigned? (contains? unicode-data cp)
+  (let [assigned?      (contains? unicode-data cp)
         iana-overrides (load-iana-exceptions-cached)]
     (cond
       ;; 1. Check for noncharacters first (even if unassigned, they should be DISALLOWED)
       (precis-ignorable? derived-props cp) :disallowed
-      
+
       ;; 2. UNASSIGNED characters stay UNASSIGNED (critical for version accuracy)
       (not assigned?) :unassigned
-      
+
       ;; 3. IANA expert overrides for assigned characters (all versions)
       ;; BUT only if the IANA override is not UNASSIGNED (since assignment status is version-dependent)
-      (and (contains? iana-overrides cp) 
+      (and (contains? iana-overrides cp)
            (not= (get iana-overrides cp) :unassigned)) (get iana-overrides cp)
-      
+
       ;; 4. Version-aware special cases for assigned characters
       ;; U+180B-180D: Mongolian FVS1-3 always DISALLOWED (assigned since Unicode 6.3.0)
       (<= 0x180B cp 0x180D) :disallowed
-      
+
       ;; U+180F: Mongolian FVS4 DISALLOWED when assigned (Unicode 14.0.0+)
       (and (= cp 0x180F) (version-gte? version "14.0.0")) :disallowed
-      
+
       ;; U+111C9: Sharada Sandhi Mark - property transition in Unicode 11.0.0
-      (and (= cp 0x111C9) (version-lt? version "11.0.0")) :free-pval
+      (and (= cp 0x111C9) (version-lt? version "11.0.0"))  :free-pval
       (and (= cp 0x111C9) (version-gte? version "11.0.0")) :pvalid
-      
+
       ;; U+166D: Canadian Syllabics Chi Sign - documented transition case
       ;; (The property change doesn't affect derived value, but included for completeness)
-      
+
       ;; 5. Standard RFC 8264 algorithm
       :else (derive-precis-property-rfc8264 unicode-data derived-props cp))))
 
@@ -381,44 +386,70 @@
   "Get Unicode character name for a codepoint"
   [unicode-data cp]
   (get-in unicode-data [cp :name]
-    ;; Handle special ranges for unassigned codepoints
+          ;; Handle special ranges for unassigned codepoints
           (cond
-      ;; CJK Ideographs ranges
-            (<= 0x3400 cp 0x4DBF) "<CJK Ideograph Extension A>"
-            (<= 0x4E00 cp 0x9FFF) "<CJK Ideograph>"
-            (<= 0xF900 cp 0xFAFF) "<CJK Compatibility Ideograph>"
+            ;; CJK Ideographs ranges
+            (<= 0x3400 cp 0x4DBF)   "<CJK Ideograph Extension A>"
+            (<= 0x4E00 cp 0x9FFF)   "<CJK Ideograph>"
+            (<= 0xF900 cp 0xFAFF)   "<CJK Compatibility Ideograph>"
             (<= 0x20000 cp 0x2A6DF) "<CJK Ideograph Extension B>"
             (<= 0x2A700 cp 0x2B73F) "<CJK Ideograph Extension C>"
             (<= 0x2B740 cp 0x2B81F) "<CJK Ideograph Extension D>"
             (<= 0x2B820 cp 0x2CEAF) "<CJK Ideograph Extension E>"
             (<= 0x2CEB0 cp 0x2EBEF) "<CJK Ideograph Extension F>"
-            (<= 0x30000 cp 0x3134A) "<CJK Ideograph Extension G>" ; New in Unicode 13.0.0
+            (<= 0x30000 cp 0x3134A) "<CJK Ideograph Extension G>"   ;; New in Unicode 13.0.0
 
-      ;; Tangut Ideographs  
+            ;; Tangut Ideographs
             (<= 0x17000 cp 0x187F7) "<Tangut Ideograph>"
-            (<= 0x18800 cp 0x18AFF) "<Tangut Ideograph Supplement>" ; New in Unicode 12.0.0
-            (<= 0x18D00 cp 0x18D08) "<Tangut Ideograph Supplement>" ; Additional range
+            (<= 0x18800 cp 0x18AFF) "<Tangut Ideograph Supplement>" ;; New in Unicode 12.0.0
+            (<= 0x18D00 cp 0x18D08) "<Tangut Ideograph Supplement>" ;; Additional range
 
-      ;; Hangul Syllables
+            ;; Hangul Syllables
             (<= 0xAC00 cp 0xD7AF) "<Hangul Syllable>"
 
-      ;; Default for truly unassigned
+            ;; Default for truly unassigned
             :else (format "<UNASSIGNED-%04X>" cp))))
+
+(defn latest-unicode-version
+  "Get the latest Unicode version from unicode.org by parsing the content of the latest page"
+  []
+  (try
+    (let [response (http/get "https://www.unicode.org/versions/latest/" 
+                             {:follow-redirects :normal :as :string})
+          body (:body response)
+          version-match (when body (re-find #"Unicode\s+(\d+\.\d+\.\d+)" body))]
+      (when version-match
+        (second version-match)))
+    (catch Exception e
+      (println "Warning: Could not fetch latest Unicode version:" (.getMessage e))
+      nil)))
+
+(defn discover-unicode-versions
+  "Discover available Unicode versions by examining the data directory structure"
+  [data-dir]
+  (when (.exists (io/file data-dir))
+    (->> (io/file data-dir)
+         .listFiles
+         (filter #(.isDirectory %))
+         (map #(.getName %))
+         (filter #(re-matches #"\d+\.\d+\.\d+" %))
+         (sort version-compare)
+         vec)))
 
 (defn compress-ranges
   "Compress consecutive codepoints with same property into ranges"
   [codepoint-props]
   (let [sorted-cps (sort (keys codepoint-props))]
-    (loop [ranges []
+    (loop [ranges        []
            current-start nil
-           current-end nil
-           current-prop nil
-           remaining sorted-cps]
+           current-end   nil
+           current-prop  nil
+           remaining     sorted-cps]
       (if (empty? remaining)
         (if current-start
           (conj ranges [current-start current-end current-prop])
           ranges)
-        (let [cp (first remaining)
+        (let [cp   (first remaining)
               prop (get codepoint-props cp)]
           (if (and current-start
                    (= prop current-prop)

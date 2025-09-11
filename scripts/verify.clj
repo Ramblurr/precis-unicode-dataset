@@ -9,9 +9,7 @@
 
 (def tables-dir "reference/tables-extracted")
 (def tables-new-dir "reference/tables-generated")
-(def unicode-base-path "data")
 (def scratch-dir "reference/scratch")
-(def unicode-versions ["6.3.0" "7.0.0" "8.0.0" "9.0.0" "10.0.0" "11.0.0" "12.0.0" "13.0.0" "14.0.0" "15.0.0" "16.0.0" "17.0.0"])
 
 (defn find-files
   "Find all .txt and .csv files in a directory"

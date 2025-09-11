@@ -3,13 +3,10 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.data.csv :as csv]
-            [common :as common]))
+            [common :as common :refer [all-codepoints]]))
 
 (def unicode-base-path "data")
 (def output-base-path "reference/tables-generated")
-(def unicode-versions ["6.3.0" "7.0.0" "8.0.0" "9.0.0" "10.0.0" "11.0.0" "12.0.0" "13.0.0" "14.0.0" "15.0.0" "16.0.0" "17.0.0"])
-
-(def all-cps (range 0x0000 0x110000))
 
 (defn format-comment
   "Format comment for codepoint range, following RFC 72-character line limit"
@@ -19,7 +16,7 @@
     (let [start-name (common/get-character-name unicode-data start)
           end-name (common/get-character-name unicode-data end)
           combined (str start-name ".." end-name)]
-      combined))) ; Return full combined name, truncation handled at line level
+      combined)))
 
 (defn write-table-file
   "Write a table file with proper formatting"
@@ -36,7 +33,7 @@
                             final-line (if (<= (count full-line) 72)
                                          full-line
                                          (subs full-line 0 72))]
-                        (str/trimr final-line))) ; Remove trailing spaces
+                        (str/trimr final-line)))
               all-lines (vec lines)]
           ;; Write all lines except the last with newlines, last line without newline  
           (doseq [line (butlast all-lines)]
@@ -57,10 +54,10 @@
         ;; derive the property values for both versions using unified function
         from-props (reduce (fn [acc cp]
                              (assoc acc cp (common/derive-precis-property from-unicode from-derived cp from-version)))
-                           {} all-cps)
+                           {} all-codepoints)
         to-props (reduce (fn [acc cp]
                            (assoc acc cp (common/derive-precis-property to-unicode to-derived cp to-version)))
-                         {} all-cps)
+                         {} all-codepoints)
         ;; Process all changes in one pass
         [from-unassigned-changes existing-prop-changes]
         (reduce (fn [[unassigned existing] cp]
@@ -86,7 +83,7 @@
                       ;; No change
                       :else
                       [unassigned existing])))
-                [{} {}] all-cps)
+                [{} {}] all-codepoints)
         base-filename (str output-base-path "/changes-" from-version "-" to-version)]
     (.mkdirs (io/file output-base-path))
     (when (seq from-unassigned-changes)
@@ -117,7 +114,6 @@
     (if (.exists (io/file iana-file))
       (with-open [reader (io/reader iana-file)]
         (let [csv-data (csv/read-csv reader)
-              header (first csv-data)
               rows (rest csv-data)]
           (reduce (fn [acc [codepoint-str property description]]
                     (let [range (common/parse-codepoint-range-iana codepoint-str)
@@ -139,8 +135,7 @@
   [mappings]
   (let [output-file (str output-base-path "/precis-mappings-6.3.0.edn")]
     (.mkdirs (io/file output-base-path))
-    (spit output-file (pr-str mappings))
-    (println (format "Saved PRECIS mappings to: %s" output-file))))
+    (spit output-file (pr-str mappings))))
 
 (defn write-iana-6.3-csv
   "Generate IANA-compatible CSV output format matching exact IANA formatting"
@@ -213,20 +208,23 @@
                                     ;; Quote description if it contains commas, like IANA does
                                    (if (str/includes? description ",")
                                      (format "\"%s\"" description)
-                                     description))))))
-
-      (println (format "Generated %d ranges in IANA-compatible CSV format." (count ranges))))))
+                                     description)))))))))
 
 (defn generate-unicode-tables
   "Generate Unicode change tables between versions"
   []
-  (println "Generating PRECIS Unicode change tables...")
-  (dorun
-   (pmap (fn [[from to]]
-           (println (format "Processing %s -> %s..." from to))
-           (generate-change-table from to))
-         (partition 2 1 unicode-versions)))
-  (println "Done! Check" output-base-path "for generated tables."))
+  (let [unicode-versions (common/discover-unicode-versions unicode-base-path)]
+    (if (seq unicode-versions)
+      (do
+        (println "Generating PRECIS Unicode change tables...")
+        (dorun
+         (pmap (fn [[from to]]
+                 (println (format "Processing %s -> %s..." from to))
+                 (generate-change-table from to))
+               (partition 2 1 unicode-versions)))
+        (println "Done! Check" output-base-path "for generated tables.")
+        (println "or to verify correctness run: bb verify"))
+      (println "No Unicode versions found in" unicode-base-path))))
 
 (defn generate-iana-6.3-data
   "Generate IANA-compatible CSV only"

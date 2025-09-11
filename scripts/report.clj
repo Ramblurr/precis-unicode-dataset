@@ -3,8 +3,7 @@
   (:require
    [clojure.java.io :as io]
    [clojure.string :as str]
-   [clojure.set :as set]
-   [generate :refer [parse-hex parse-codepoint-range]]))
+   [common :as common]))
 
 ;; Data structures
 (defrecord VersionChange [from-version to-version stats notes discrepancies])
@@ -12,8 +11,8 @@
 (defrecord PropertyDelta [before after change])
 
 ;; Configuration
-(def unicode-versions ["6.3.0" "7.0.0" "8.0.0" "9.0.0" "10.0.0" "11.0.0"
-                       "12.0.0" "13.0.0" "14.0.0" "15.0.0" "16.0.0" "17.0.0"])
+(def data-dir "data")
+(def get-unicode-versions (memoize #(common/discover-unicode-versions data-dir)))
 
 (def tables-dir "reference/tables-generated")
 (def extracted-dir "reference/tables-extracted")
@@ -29,7 +28,7 @@
           property (when property-section
                      (str/trim (first (str/split property-section #"#"))))]
       (when (and cp-range property)
-        {:cp-range (parse-codepoint-range cp-range)
+        {:cp-range (common/parse-codepoint-range cp-range)
          :property (keyword (str/lower-case (str/replace property #"_" "-")))}))))
 
 (defn read-table-file
@@ -92,11 +91,8 @@
              (map (fn [line]
                     (let [[codepoint property _] (str/split line #",")]
                       (when (and codepoint property)
-                        (let [cp-range (if (str/includes? codepoint "-")
-                                         (let [[start end] (str/split codepoint #"-")]
-                                           [(parse-hex start) (parse-hex end)])
-                                         (let [cp (parse-hex codepoint)]
-                                           [cp cp]))]
+                        (let [range (common/parse-codepoint-range-iana codepoint)
+                              cp-range [(:start range) (:end range)]]
                           {:cp-range cp-range
                            :property (normalize-property
                                       (keyword (str/lower-case
@@ -242,6 +238,7 @@
         baseline-stats (calculate-property-stats baseline-props)
 
         ;; Process each version transition
+        unicode-versions (get-unicode-versions)
         version-pairs (partition 2 1 unicode-versions)
 
         ;; Accumulate changes through versions
