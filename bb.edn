@@ -20,6 +20,8 @@
          report {:doc "Generate analysis report of PRECIS property changes across Unicode versions"
                  :task report/-main}
 
+         codepoint {:doc ""
+                    :task codepoint/-main}
          clean {:doc "Remove all generated directories (tables-extracted, tables-generated, scratch, data)"
                 :task (do
                         (fs/delete-tree "tables-extracted")

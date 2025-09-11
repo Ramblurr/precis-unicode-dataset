@@ -48,7 +48,7 @@ Each class is defined by Derived Property Values, which are computed from proper
 These values are published in the IANA PRECIS Derived Property Value registry [[IANA-PRECIS]](#IANA-PRECIS).
 
 While PRECIS was designed to be Unicode-agile, permitting implementations to calculate Derived Property Values against newer versions of Unicode, the IANA registry itself has remained frozen at Unicode 6.3.0.
-Section 11.1 of RFC 8264 specifies that the registry must not be updated until issues identified in Section 13.5 of the RFC and in the [[IAB Statement on Unicode 7.0.0]](#IAB-UNICODE7) are resolved. 
+Section 11.1 of RFC 8264 specifies that the registry must not be updated until issues identified in Section 13.5 of the RFC and in the [[IAB Statement on Unicode 7.0.0]](#IAB-UNICODE7) are resolved (see "The hamza problem" below). 
 
 While IDNA2008 faced similar challenges and successfully established an expert review process [[RFC8753]](#RFC8753) to handle Unicode updates and as of March 2022 the IAB issue was  definitively resolved in [[RFC9233]](#RFC9233).
 
@@ -145,6 +145,8 @@ Starting with Unicode 11 this changed and U+111C9 is allowed (PVALID).
 
 This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
 
+---
+
 #### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
 **Anomaly**
@@ -163,6 +165,8 @@ Despite the theoretical equivalence, the reference tables (tables-extracted/chan
 Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency in reference implementation).
 
 This discrepancy has no practical impact on PRECIS implementations since the derived property value remains the same.
+
+---
 
 ### 2. Undocumented Discrepancies
 
@@ -199,6 +203,8 @@ The DISALLOWED resolution is supported by two key factors:
 1. Is the IANA precis-tables-6.3.0 registry normative with respect to RFC 8264?
 2. Why were codepoints U+180B-180D MONGOLIAN FREE VARIATION SELECTOR ONE through THREE (FVS1 - FVS3) categorized as DISALLOWED in IANA precis-tables-6.3.0?
 3. Do normative rules exist in any extant RFCs that would cover the overriding of FVS1-FVS4 as DISALLOWED?
+
+---
 
 ### Implementation Notes
 
