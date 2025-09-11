@@ -1,12 +1,16 @@
-# PRECIS Unicode Dataset Generator
+# PRECIS Framework Unicode Update Analysis
 
-This project generates machine-readable datasets of PRECIS Framework Derived Property Value changes across Unicode versions to evaluate Unicode update compatibility.
+This study analyzes PRECIS Framework compatibility with Unicode evolution by tracking Derived Property Value changes across major Unicode releases.
+
+The project includes complete tooling for PRECIS property derivation and change analysis, allowing researchers and implementers to reproduce findings and extend analysis to future Unicode releases.
+
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
-- [PRECIS Unicode Dataset Generator](#precis-unicode-dataset-generator)
+- [PRECIS Framework Unicode Update Analysis](#precis-framework-unicode-update-analysis)
   - [Background](#background)
+    - [The "hamza" problem ](#the-hamza-problem)
   - [Objective](#objective)
   - [Data Sources](#data-sources)
     - [Reference Standards](#reference-standards)
@@ -40,23 +44,50 @@ This project generates machine-readable datasets of PRECIS Framework Derived Pro
 
 ## Background
 
-The PRECIS Framework[1] for internationalized string handling was standardized in RFC 8264 against Unicode 6.3.0, with property classifications registered in the IANA precis-tables-6.3.0[2]. However, unlike IDNA2008 which has established procedures for Unicode updates[4], PRECIS has remained locked to Unicode 6.3.0 due to unresolved compatibility concerns.
+The PRECIS Framework [[RFC8264]](#RFC8264) defines two string classes for use in application protocols: IdentifierClass, for identifiers such as usernames, and FreeformClass, for strings such as passwords.
+Each class is defined by Derived Property Values, which are computed from properties defined in the Unicode Standard.
+These values are published in the IANA PRECIS Derived Property Value registry [[IANA-PRECIS]](#IANA-PRECIS).
 
-As stated in Section 11.1 of RFC 8264, the IANA PRECIS registry was explicitly designed not to be updated beyond Unicode 6.3.0 until issues described in the IAB Statement on Unicode 7.0.0[5] and Section 13.5 of RFC 8264 are resolved. These concerns center on:
+While PRECIS was designed to be Unicode-agile, permitting implementations to calculate Derived Property Values against newer versions of Unicode, the IANA registry itself has remained frozen at Unicode 6.3.0.
+Section 11.1 of RFC 8264 specifies that the registry must not be updated until issues identified in Section 13.5 of the RFC and in the [[IAB Statement on Unicode 7.0.0]](#IAB-UNICODE7) are resolved. 
 
-- **Identifier Stability**: Potential breaking changes to existing string classifications
-- **Security Implications**: Character property changes affecting authentication and authorization
-- **Normalization Complexity**: Unicode updates introducing new character transformation behaviors
+While IDNA2008 faced similar challenges and successfully established an expert review process [[RFC8753]](#RFC8753) to handle Unicode updates and as of March 2022 the IAB issue was  definitively resolved in [[RFC9233]](#RFC9233).
 
-While IDNA2008 faced similar challenges and successfully established an expert review process (RFC 8753[4]) to handle Unicode updates, PRECIS lacks an equivalent framework. T. Nemoto's analysis[3] demonstrates that implementing a similar review model for PRECIS may be a practical solution, but requires comprehensive impact analysis of property value changes across Unicode versions.
+However, PRECIS lacks an equivalent review framework.
+T. Nemoto's analysis in [[NEMOTO-DRAFT]](#NEMOTO-DRAFT) demonstrates that implementing a similar review model for PRECIS may be a practical solution, but requires comprehensive impact analysis of property value changes across Unicode versions.
 
-**In simpler terms:** When applications handle international text (like usernames with Chinese characters or passwords with emoji), they need rules about which characters are allowed and how to treat them. PRECIS provides these rules, but they're stuck using an old version of Unicode from 2013. Unicode keeps adding new characters and changing how existing ones work, but PRECIS can't update because nobody knows if the changes would break existing software or create security problems. This project analyzes what would happen if PRECIS did update, providing the data needed to make that decision safely.
+This project seeks to provide that impact analysis.
+By generating and publishing comparative datasets of PRECIS Derived Property Values across Unicode versions, this project provides the empirical basis for assessing identifier stability, security impacts, and normalization issues.
 
-This project generates the datasets necessary to evaluate whether PRECIS can safely follow Unicode updates without compromising security or breaking existing implementations, providing the foundation for potential PRECIS Framework evolution beyond Unicode 6.3.0.
+The goal is to enable informed consideration of whether PRECIS can adopt a Unicode update model similar to IDNA2008's, thereby supporting its evolution beyond Unicode 6.3.0.
+
+### The "hamza" problem 
+
+The introduction of ARABIC LETTER BEH WITH HAMZA ABOVE (U+08A1) in Unicode 7.0.0 exposed a difference between precomposed and decomposed sequences in Arabic script [[IAB2005-1]](#IAB2005-1). The character U+08A1 can also be expressed as ARABIC LETTER BEH (U+0628) followed by ARABIC HAMZA ABOVE (U+0654).
+
+Unlike similar cases in the Latin script such as a-diaeresis, the precomposed and decomposed forms of beh-with-hamza are not canonically equivalent in Unicode normalization [[IAB2005-2]](#IAB2005-2).
+
+As a result, normalization does not collapse U+08A1 and U+0628+U+0654 into the same string, leaving them distinct code point sequences [[RFC9233]](#RFC9233).
+This creates the potential for spoofing in identifiers, because two visually indistinguishable usernames can coexist while being treated as different by PRECIS-based comparison.
+
+For IDNA2008, the IETF studied the problem and decided that no exception should be introduced, leaving U+08A1 as PVALID and relying on strengthened review processes defined in RFC 8753 [[RFC9233]](#RFC9233).
+RFC 9233 documented this outcome and explicitly recognized that U+08A1 is not an isolated case, since similar combining issues exist elsewhere in Unicode (though the RFC does not list any).
+For PRECIS, however, no update has been published beyond RFC 8264, and the framework has not yet been aligned to newer Unicode versions in IANA registries [[RFC8264]](#RFC8264).
+
+This means the question of how to handle U+08A1 and similar cases remains unresolved in PRECIS, at least at the standards level.
+Applications and profiles that use PRECIS may need to impose their own restrictions or confusable-detection measures to avoid spoofing attacks.
+
+The facts are clear: PRECIS permits both forms as valid, Unicode normalization does not unify them, and the potential for confusion remains.
+
+Whether this is regarded as a "solved" problem for PRECIS is therefore an open question, and the implications must be weighed by implementers and reviewers in each deployment context
+
+In any case, this project is not focused on the hamza problem and mentions it as an important other open question in this space.
 
 ## Objective
 
-Generate comprehensive datasets showing how PRECIS Derived Property Values change between Unicode versions, starting from the baseline Unicode 6.3.0 through current versions. This data enables analysis of:
+Generate comprehensive datasets showing how PRECIS Derived Property Values change between Unicode versions, starting from the baseline Unicode 6.3.0 through current versions.
+
+This data enables analysis of:
 
 - Character property transitions (PVALID, DISALLOWED, UNASSIGNED, etc.)
 - Impact of newly assigned codepoints on existing PRECIS profiles
@@ -72,8 +103,10 @@ The generated datasets can be used to support:
 ## Data Sources
 
 ### Reference Standards
-- IANA precis-tables-6.3.0 [2]: Official baseline property classifications
-- T. Nemoto I-D draft-nemoto-precis-unicode14-00 [3]: Known-good change analysis for Unicode transitions
+
+- Unicode Character Database (UCD) [[UCD]](#UCD)
+- IANA precis-tables-6.3.0 [[IANA-PRECIS]](#IANA-PRECIS): Official baseline property classifications
+- T. Nemoto I-D draft-nemoto-precis-unicode14-00 [[NEMOTO-DRAFT]](#NEMOTO-DRAFT): Known-good change analysis for Unicode transitions
 
 ### Generated Outputs
 - Complete property mappings for each Unicode version
@@ -84,7 +117,7 @@ The generated datasets can be used to support:
 
 ### Discrepancies
 
-During implementation, we discovered several codepoints that require special handling to match the reference data from [I-D draft-nemoto-precis-unicode14-00][3]. 
+During implementation, we discovered several codepoints that require special handling to match the reference data from [[NEMOTO-DRAFT]](#NEMOTO-DRAFT). 
 These fall into two categories: 
 
 1. Documented  discrepancies: These codepoints are explicitly discussed in I-D draft-nemoto-precis-unicode14-00
@@ -113,7 +146,7 @@ I-D draft-nemoto-precis-unicode14-00 notes: "Unicode General Properties of `CANA
 
 U+180F, MONGOLIAN FREE VARIATION SELECTOR FOUR (FVS4) is assigned in Unicode 14.0.0 with `General_Category=Mn` (Nonspacing Mark).
 
-**Anomaly**:  Following RFC 8264 Section 8's algorithm, `Mn` is included in [LetterDigits (RFC 8264 Section 9.1)][8264_91] which forwards to [RFC 5892 2.1][5892_21], which results in PVALID categorization.
+**Anomaly**:  Following RFC 8264 Section 8's algorithm, `Mn` is included in [[LetterDigits (RFC 8264 Section 9.1)]](#RFC8264-SECTION91) which forwards to [[RFC 5892 2.1]](#RFC5892-SECTION21), which results in PVALID categorization.
 
 Yet I-D draft-nemoto-precis-unicode14-00 categorizes FVS4 as DISALLOWED.
 The I-D does not explain why this character should be DISALLOWED rather than the algorithmically derived PVALID.
@@ -121,7 +154,7 @@ The I-D does not explain why this character should be DISALLOWED rather than the
 However the anomaly deepens when looking at codepoints U+180B-180D MONGOLIAN FREE VARIATION SELECTOR ONE through THREE (FVS1 - FVS3). 
 These codepoints are semantically similar to FVS4 and should also be algorithmically derived as PVALID, but they are listed in the IANA precis-tables-6.3.0 as DISALLOWED.
 It is not clear what rules or source material were considered in the construction of IANA precis-tables-6.3.0. Notably they do not exist in the Exceptions (F) category.
-A review of RFC 5892, its [errata][5892errata], and the update in [RFC 8753][8753] do not shed any light on the mystery.
+A review of RFC 5892, its [[errata]](#RFC5892-ERRATA), and the update in [[RFC 8753]](#RFC8753) do not shed any light on the mystery.
 
 
 **Resolution**: Override the algorithmic derivation to force DISALLOWED to match reference tables
@@ -131,7 +164,7 @@ The classification as DISALLOWED follows established IETF expert precedent: FVS1
 The DISALLOWED resolution is supported by two key factors:
 
 1. Expert precedent: FVS1-3 are DISALLOWED in IANA precis-tables-6.3.0, establishing that these mongolian variation selectors require special exceptions
-2. Practical usage considerations, as the [Unicode proposal for FVS4][fvs4] states it "would only be needed by pre-contemporary, historical texts," indicating this character is not intended for modern text input that would appear in PRECIS systems like usernames, identifiers, or passwords
+2. Practical usage considerations, as the [[Unicode proposal for FVS4]](#FVS4-PROPOSAL) states it "would only be needed by pre-contemporary, historical texts," indicating this character is not intended for modern text input that would appear in PRECIS systems like usernames, identifiers, or passwords
 
 
 **Open Questions**:
@@ -384,26 +417,74 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
 ## Project Structure
 
 - `scripts/` - Data generation and validation scripts
-- `tables-extracted/` - Reference datasets from [T. Nemoto draft][3] and [IANA's precis-tables][2]
+- `tables-extracted/` - Reference datasets from [[T. Nemoto draft]](#NEMOTO-DRAFT) and [[IANA's precis-tables]](#IANA-PRECIS)
 - `tables-generated/` - Generated datasets that should match the extracted ones
 - `data/` - Final machine-readable datasets showing PRECIS Derived Property Value changes between unicode versions (**TODO**: this is not yet done)
 
 ## References
 
+<a id="FVS4-PROPOSAL">[FVS4-PROPOSAL]</a>  
+Anderson, D. (2020).  
+Mongolian Free Variation Selector Four.  
+Unicode Technical Committee Document L2/20-057. <https://www.unicode.org/L2/L2020/20057-mongolian-fvs4.pdf>
 
-1. [RFC 8264: PRECIS Framework][1]
-2. [IANA PRECIS Tables][2]
-3. [Draft Nemoto PRECIS Unicode Analysis][3]
-4. [RFC 8753: DNS Terminology][4]
-5. [IAB Statement on Identifiers and Unicode 7.0.0][5]
+<a id="IAB-UNICODE7">[IAB-UNICODE7]</a>  
+Internet Architecture Board (2015).  
+IAB Statement on Identifiers and Unicode 7.0.0.  
+<https://datatracker.ietf.org/doc/statement-iab-statement-on-identifiers-and-unicode-7-0-0/>
 
-[1]: https://www.rfc-editor.org/rfc/rfc8264.html
-[2]: https://www.iana.org/assignments/precis-tables/
-[3]: https://datatracker.ietf.org/doc/draft-nemoto-precis-unicode/
-[4]: https://www.rfc-editor.org/rfc/rfc8753.html
-[5]: https://datatracker.ietf.org/doc/statement-iab-statement-on-identifiers-and-unicode-7-0-0/
-[8264_91]: https://www.rfc-editor.org/rfc/rfc8264.html#section-9.1
-[5892_21]: https://www.rfc-editor.org/rfc/rfc5892#section-2.1
-[fvs4]: https://www.unicode.org/L2/L2020/20057-mongolian-fvs4.pdf
-[5892errata]: https://www.rfc-editor.org/errata/rfc5892
-[8753]: https://www.rfc-editor.org/rfc/rfc8753
+<a id="IAB2005-1">[IAB2005-1]</a>  
+Internet Architecture Board (2015, January 27).  
+IAB Statement on Identifiers and Unicode 7.0.0.  
+<https://www.iab.org/documents/correspondence-reports-documents/2015-2/iab-statement-on-identifiers-and-unicode-7-0-0/archive/>
+
+<a id="IAB2005-2">[IAB2005-2]</a>  
+Internet Architecture Board (2015, February 11).  
+IAB Statement on Identifiers and Unicode 7.0.0.  
+<https://www.iab.org/documents/correspondence-reports-documents/2015-2/iab-statement-on-identifiers-and-unicode-7-0-0/>
+
+<a id="IANA-PRECIS">[IANA-PRECIS]</a>  
+Internet Assigned Numbers Authority.  
+PRECIS Derived Property Value Registry.  
+<https://www.iana.org/assignments/precis-tables/>
+
+<a id="NEMOTO-DRAFT">[NEMOTO-DRAFT]</a>  
+Nemoto, T.  
+Analysis of PRECIS Framework update with Unicode 14.0.0.  
+Internet-Draft draft-nemoto-precis-unicode14-00. <https://datatracker.ietf.org/doc/draft-nemoto-precis-unicode/>
+
+<a id="RFC5892-ERRATA">[RFC5892-ERRATA]</a>  
+RFC Editor.  
+RFC 5892 Errata.  
+<https://www.rfc-editor.org/errata/rfc5892>
+
+<a id="RFC5892-SECTION21">[RFC5892-SECTION21]</a>  
+Faltstrom, P. (2010).  
+The Unicode Code Points and Internationalized Domain Names for Applications (IDNA).  
+RFC 5892, Section 2.1. <https://www.rfc-editor.org/rfc/rfc5892#section-2.1>
+
+<a id="RFC8264">[RFC8264]</a>  
+Saint-Andre, P. and M. Blanchet (2017).  
+PRECIS Framework: Preparation, Enforcement, and Comparison of Internationalized Strings in Application Protocols.  
+RFC 8264. <https://www.rfc-editor.org/info/rfc8264>
+
+<a id="RFC8264-SECTION91">[RFC8264-SECTION91]</a>  
+Saint-Andre, P. and M. Blanchet (2017).  
+PRECIS Framework: Preparation, Enforcement, and Comparison of Internationalized Strings in Application Protocols.  
+RFC 8264, Section 9.1. <https://www.rfc-editor.org/rfc/rfc8264.html#section-9.1>
+
+<a id="RFC8753">[RFC8753]</a>  
+Klensin, J. and P. Fältström (2020).  
+Internationalized Domain Names for Applications (IDNA) Review for New Unicode Versions.  
+RFC 8753. <https://www.rfc-editor.org/info/rfc8753>
+
+<a id="RFC9233">[RFC9233]</a>  
+Fältström, P. (2022).  
+Internationalized Domain Names for Applications 2008 (IDNA2008) and Unicode 12.0.0.  
+RFC 9233. <https://www.rfc-editor.org/info/rfc9233>
+
+<a id="UCD">[UCD]</a>  
+The Unicode Consortium.  
+Unicode Character Database.  
+<https://www.unicode.org/ucd/>
+
