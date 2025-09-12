@@ -1,9 +1,10 @@
 #!/usr/bin/env bb
 (ns changes
   (:require
+   [clojure.set :as set]
    [clojure.java.io :as io]
    [clojure.string :as str]
-   [common :as common :refer [all-codepoints]]))
+   [common :as common]))
 
 (def unicode-base-path "data")
 (def output-base-path "reference/tables-generated")
@@ -19,12 +20,15 @@
       combined)))
 
 (defn write-table-file
-  "Write a table file with proper formatting"
+  "Write an ietf rfc table file
+
+  changes should be a map of codepoints -> [derived-property-value rule-reason]"
   [filepath unicode-data changes]
   (when (seq changes)
-    (let [ranges (common/compress-ranges changes)]
+    (let [ranges (common/compress-ranges-map changes)]
+      (println ranges)
       (with-open [writer (io/writer filepath)]
-        (let [lines     (for [[start end prop] ranges]
+        (let [lines     (for [[start end [prop _reason]] ranges]
                           (let [range-str  (common/range-format [start end])
                                 prop-str   (get common/precis-properties prop "UNKNOWN")
                                 comment    (format-comment unicode-data start end)
@@ -42,70 +46,77 @@
           (when (seq all-lines)
             (.write writer (last all-lines))))))))
 
+(defn change-table
+  "Produces a tuple of [assigned existing-change]
+
+  where from-unassigned is a map of codepoint -> [property-value rule-reason]"
+  [from-props to-props]
+  (let [[assigned  existing-change]
+        (reduce (fn [[assigned existing-change] cp]
+                  (let [[from-prop _from-reason] (nth from-props cp)
+                        [to-prop to-reason]      (nth to-props cp)]
+                    [(if (and (= from-prop :unassigned) (not= to-prop :unassigned))
+                       (assoc! assigned cp [to-prop to-reason])
+                       assigned)
+                     (if (and (not= from-prop :unassigned) (not= from-prop to-prop))
+                       (assoc! existing-change cp [to-prop to-reason])
+                       existing-change)]))
+                [(transient {}) (transient {})]
+                common/all-codepoints)]
+
+    [(persistent! assigned) (persistent! existing-change)]))
+
 (defn generate-change-table
-  "Generate change tables between two Unicode versions using unified derive-precis-property"
-  [from-version to-version]
-  (let [from-dir     (str unicode-base-path "/" from-version)
-        to-dir       (str unicode-base-path "/" to-version)
-        from-unicode (common/parse-unicode-data (str from-dir "/UnicodeData.txt"))
-        to-unicode   (common/parse-unicode-data (str to-dir "/UnicodeData.txt"))
-        from-derived (common/parse-derived-core-properties (str from-dir "/DerivedCoreProperties.txt"))
-        to-derived   (common/parse-derived-core-properties (str to-dir "/DerivedCoreProperties.txt"))
-        ;; derive the property values for both versions using unified function
-        from-props   (reduce (fn [acc cp]
-                               (assoc acc cp (common/derive-precis-property from-unicode from-derived cp from-version)))
-                             {} all-codepoints)
-        to-props     (reduce (fn [acc cp]
-                               (assoc acc cp (common/derive-precis-property to-unicode to-derived cp to-version)))
-                             {} all-codepoints)
-        ;; Process all changes in one pass
-        [from-unassigned-changes existing-prop-changes]
-        (reduce (fn [[unassigned existing] cp]
-                  (let [from-prop (get from-props cp)
-                        to-prop   (get to-props cp)]
-                    (cond
-                      ;; Special case: U+111C9 appears in both tables for 10.0.0->11.0.0
-                      (and (= cp 0x111C9) (= from-version "10.0.0") (= to-version "11.0.0"))
-                      [(assoc unassigned cp to-prop) (assoc existing cp to-prop)]
-
-                      ;; Special case: U+166D in 11.0.0->12.0.0 transition
-                      (and (= cp 0x166D) (= from-version "11.0.0") (= to-version "12.0.0"))
-                      [(assoc unassigned cp to-prop) existing]
-
-                      ;; Changes from UNASSIGNED (newly assigned codepoints)
-                      (and (= from-prop :unassigned) (not= to-prop :unassigned))
-                      [(assoc unassigned cp to-prop) existing]
-
-                      ;; Changes from existing properties (not UNASSIGNED)
-                      (and (not= from-prop :unassigned) (not= from-prop to-prop))
-                      [unassigned (assoc existing cp to-prop)]
-
-                      ;; No change
-                      :else
-                      [unassigned existing])))
-                [{} {}] all-codepoints)
-        base-filename (str output-base-path "/changes-" from-version "-" to-version)]
+  "Generate change tables using pre-computed properties"
+  [all-props from-version to-version]
+  (let [from-props                 (get-in all-props [from-version :props])
+        to-props                   (get-in all-props [to-version :props])
+        to-unicode                 (get-in all-props [to-version :unicode-data])
+        [assigned existing-change] (change-table from-props to-props)
+        base-filename              (str output-base-path "/changes-" from-version "-" to-version)]
     (.mkdirs (io/file output-base-path))
-    (when (seq from-unassigned-changes)
+    (when (some some? assigned)
       (write-table-file (str base-filename "-from-unassigned.txt")
-                        to-unicode from-unassigned-changes))
-    (when (seq existing-prop-changes)
+                        to-unicode assigned))
+    (when (some some? existing-change)
       (let [suffix "-property-changes"]
         (write-table-file (str base-filename suffix ".txt")
-                          to-unicode existing-prop-changes)))))
+                          to-unicode existing-change)))))
 
-(defn generate-complete-precis-mappings
-  "Generate complete PRECIS property mappings for Unicode 6.3.0 (uses IANA overrides automatically)"
-  []
-  (let [unicode-dir   (str unicode-base-path "/6.3.0")
-        unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
-        derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
-        all-cps       (range 0x0000 0x110000)]
+(defn build-all-version-properties
+  "Build PRECIS properties for all discovered Unicode versions (single pass per version)"
+  [versions]
+  (println (format "Deriving PRECIS property values for unicode %s in parallel" (str/join ", " versions)))
+  (->> versions
+       (pmap (fn [version]
+               (let [unicode-dir   (str unicode-base-path "/" version)
+                     unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
+                     derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
+                     props-vec     (common/build-props-vector unicode-data derived-props)]
+                 [version {:props props-vec :unicode-data unicode-data :version version}])))
+       (into {})))
 
-    (reduce (fn [acc cp]
-              ;; Uses unified function which automatically applies IANA overrides for 6.3.0
-              (assoc acc cp (common/derive-precis-property unicode-data derived-props cp "6.3.0")))
-            {} all-cps)))
+(defn write-python-txt
+  [props version]
+  (let [output-file    (str output-base-path (common/python-filename-format version))]
+    (.mkdirs (io/file output-base-path))
+    (let [ranges (common/compress-ranges-vec props)]
+      (with-open [writer (io/writer output-file)]
+        (doseq [[start end prop-tuple] ranges]
+          (let [[prop reason] prop-tuple
+                range-str     (format "%04X-%04X" start end)
+                prop-str      (-> prop name str/upper-case (str/replace #"-" "_"))
+                reason-str    (-> reason name (str/replace #"-" "_"))
+                line          (format "%s %s/%s" range-str prop-str reason-str)]
+            (.write writer (str line "\n"))))))))
+
+(defn write-python-txt-all-versions
+  "Generate Python txt files for all Unicode versions"
+  [all-props]
+  (println "Generating Python txt files for all versions...")
+  (doseq [{:keys [version props]} (vals all-props)]
+    (println (format "  Writing derived-props-%s.txt" version))
+    (write-python-txt props version)))
 
 (defn write-iana-6.3-edn
   "Save complete PRECIS mappings to file for verification"
@@ -116,50 +127,50 @@
 
 (defn write-iana-6.3-csv
   "Generate IANA-compatible CSV output format matching exact IANA formatting"
-  [mappings]
+  [mappings unicode-data]
   (let [output-file (str output-base-path "/precis-tables-6.3.0.csv")]
     (println (format "Generating IANA-compatible CSV: %s" output-file))
     (.mkdirs (io/file output-base-path))
-    (let [unicode-dir  (str unicode-base-path "/6.3.0")
-          unicode-data (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))]
-      (common/write-iana-csv output-file unicode-data mappings))))
+    (common/write-iana-csv output-file unicode-data mappings)))
 
-(defn generate-unicode-tables
-  "Generate Unicode change tables between versions"
-  []
-  (let [unicode-versions (common/discover-unicode-versions unicode-base-path)]
-    (if (seq unicode-versions)
-      (do
-        (println "Generating PRECIS Unicode change tables...")
-        (dorun
-         (pmap (fn [[from to]]
-                 (println (format "Processing %s -> %s..." from to))
-                 (generate-change-table from to))
-               (partition 2 1 unicode-versions)))
-        (println "Done! Check" output-base-path "for generated tables.")
-        (println "or to verify correctness run: bb verify"))
-      (println "No Unicode versions found in" unicode-base-path))))
+(defn generate-iana-outputs
+  "Generate IANA-specific outputs for Unicode 6.3.0"
+  [all-props]
+  (when-let [{:keys [props unicode-data]} (get all-props "6.3.0")]
+    (println "Generating IANA outputs for Unicode 6.3.0...")
+    (write-iana-6.3-edn props)
+    (write-iana-6.3-csv props unicode-data)))
 
-(defn generate-iana-6.3-data
-  "Generate IANA-compatible CSV only"
-  []
-  (let [mappings (generate-complete-precis-mappings)]
+(defn generate-change-tables
+  "Generate change tables between adjacent Unicode versions"
+  [all-props versions]
+  (when (seq versions)
+    (println "Generating PRECIS Unicode change tables...")
+    (dorun
+     (map (fn [[from to]]
+            (println (format "Processing %s -> %s..." from to))
+            (generate-change-table all-props from to))
+          (partition 2 1 versions)))
+    (println "Done! Check" output-base-path "for generated tables.")))
 
-    (write-iana-6.3-edn mappings)
-    (write-iana-6.3-csv mappings)))
+(defn match-versions
+  [unicode-versions args]
+  (if args
+    (sort common/version-compare (into [] (set/intersection (set unicode-versions) (set args))))
+    unicode-versions))
 
 (defn -main [& args]
-  (cond
-    (some #{"--iana"} args)
-    (generate-iana-6.3-data)
-
-    (some #{"--unicode"} args)
-    (generate-unicode-tables)
-
-    :else
-    (do
-      (generate-iana-6.3-data)
-      (generate-unicode-tables))))
+  (let [unicode-versions (common/discover-unicode-versions unicode-base-path)
+        version-subset   (match-versions unicode-versions args)]
+    (if (seq version-subset)
+      (let [all-props (build-all-version-properties version-subset)]
+        (generate-iana-outputs all-props)
+        (write-python-txt-all-versions all-props)
+        (if (<= (count version-subset) 1)
+          (println "Cannot generate change tables when only one version is provided")
+          (generate-change-tables all-props version-subset))
+        (println "All outputs generated! Run: bb verify"))
+      (println "No Unicode versions found in" unicode-base-path))))
 
 (when (= *file* (System/getProperty "babashka.file"))
-  (apply -main *command-line-args*))
+  (-main))

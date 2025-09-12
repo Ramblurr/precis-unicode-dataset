@@ -65,6 +65,24 @@
        :skipped    skipped-count
        :results    results})))
 
+(defn download-precis-python-refs
+  "Download reference derived-props files from precis_i18n project"
+  []
+  (let [base-url "https://raw.githubusercontent.com/byllyfish/precis_i18n/main/test/"
+        ref-dir  "reference/tables-extracted"
+        files    (map common/python-filename-format unicode-versions)]
+    (.mkdirs (io/file ref-dir))
+    (println "Downloading PRECIS Python reference files...")
+    (doseq [filename files]
+      (let [url        (str base-url filename)
+            local-path (str ref-dir "/" filename)
+            file       (io/file local-path)]
+        (when-not (.exists file)
+          (try
+            (download-file url local-path filename)
+            (catch Exception e
+              (println (format "Warning: Could not download %s: %s" filename (.getMessage e))))))))))
+
 (defn ensure-reference-files
   "Download required reference files if they don't exist"
   []
@@ -195,6 +213,9 @@
 
 (defn -main [& args]
   (ensure-reference-files)
+
+  (when (some #{"--python-refs"} args)
+    (download-precis-python-refs))
 
   (if (some #{"--new"} args)
     (handle-new-flag)

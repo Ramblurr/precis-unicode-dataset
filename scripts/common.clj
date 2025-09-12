@@ -45,8 +45,39 @@
     (hex-format start)
     (str (hex-format start) ".." (hex-format end))))
 
-(defn compress-ranges
-  "Compress consecutive codepoints with same property into ranges"
+(defn compress-ranges-vec
+  "Compress consecutive codepoints with same property into ranges
+  Input: vector where index=codepoint, value=[derived-property-value reason]
+  Output: vector of [start end [derived-property-value reason]]"
+  [props-vec]
+  (let [ranges-t (transient [])]
+    (loop [current-start nil
+           current-end   nil
+           current-prop  nil
+           cp            0]
+      (if (>= cp (count props-vec))
+        (do
+          (when current-start
+            (conj! ranges-t [current-start current-end current-prop]))
+          (persistent! ranges-t))
+        (let [prop-tuple (nth props-vec cp)]
+          (if (and current-start
+                   (= prop-tuple current-prop)
+                   (= cp (inc current-end)))
+            ;; Extend current range
+            (recur current-start cp prop-tuple (inc cp))
+            ;; Start new range or add previous range
+            (do
+              (when current-start
+                (conj! ranges-t [current-start current-end current-prop]))
+              (recur cp cp prop-tuple (inc cp)))))))))
+
+(defn compress-ranges-map
+  "Compress consecutive codepoints with same property into ranges
+
+  Input: map of codepoints -> [derived-property-value reason]
+  Output: vector of [start end [derived-property-value reason]]
+  "
   [codepoint-props]
   (let [sorted-cps (sort (keys codepoint-props))]
     (loop [ranges        []
@@ -58,18 +89,18 @@
         (if current-start
           (conj ranges [current-start current-end current-prop])
           ranges)
-        (let [cp   (first remaining)
-              prop (get codepoint-props cp)]
+        (let [cp         (first remaining)
+              prop-tuple (get codepoint-props cp)]
           (if (and current-start
-                   (= prop current-prop)
+                   (= prop-tuple current-prop)
                    (= cp (inc current-end)))
             ;; Extend current range
-            (recur ranges current-start cp prop (rest remaining))
+            (recur ranges current-start cp prop-tuple (rest remaining))
             ;; Start new range
             (recur (if current-start
                      (conj ranges [current-start current-end current-prop])
                      ranges)
-                   cp cp prop (rest remaining))))))))
+                   cp cp prop-tuple (rest remaining))))))))
 
 (defn parse-version
   "Parse version string like '6.3.0' into comparable vector [6 3 0]"
@@ -150,12 +181,16 @@
   (with-open [reader (io/reader file)]
     (reduce
      (fn [acc line]
-       (when-not (or (str/blank? line) (str/starts-with? line "#"))
-         (let [[cp-range property _comment] (map str/trim (str/split line #";"))
-               [start end]                  (parse-codepoint-range cp-range)]
+       (if (or (str/blank? line) (str/starts-with? line "#"))
+         acc
+         (let [[cp-range property-with-comment] (map str/trim (str/split line #";" 2))
+               property                         (-> property-with-comment
+                                                    (str/split #"#" 2)
+                                                    first
+                                                    str/trim)
+               [start end]                      (parse-codepoint-range cp-range)]
            (update acc (keyword (str/lower-case property))
-                   (fnil into #{}) (range start (inc end)))))
-       acc)
+                   (fnil into #{}) (range start (inc end))))))
      {}
      (line-seq reader))))
 
@@ -274,27 +309,45 @@
 
     :else nil))
 
-;; Core RFC 8264 algorithm (without special cases)
-(defn derive-precis-property-rfc8264
-  "Apply pure RFC 8264 PRECIS derivation algorithm (Section 8) - exact order required"
+(defn backwards-compatible? [_cp]
+  false)
+
+(defn derive-precis-property
+  "Apply pure RFC 8264 PRECIS derivation algorithm as per Section 8
+
+  Returns a tuple of [property-value reaason]
+  "
   [unicode-data derived-props cp]
   (let [assigned? (contains? unicode-data cp)]
     (cond
-      (exceptions-value cp)                  (exceptions-value cp)
-      ;; backwards compatible omitted
-      (not assigned?)                        :unassigned
-      (ascii7? cp)                           :pvalid
-      (join-control? cp)                     :contextj
-      (old-hangul-jamo? cp)                  :disallowed
-      (precis-ignorable? derived-props cp)   :disallowed
-      (control? unicode-data cp)             :disallowed
-      (has-compat? unicode-data cp)          :free-pval
-      (letter-digits? unicode-data cp)       :pvalid
-      (other-letter-digits? unicode-data cp) :free-pval
-      (spaces? unicode-data cp)              :free-pval
-      (symbols? unicode-data cp)             :free-pval
-      (punctuation? unicode-data cp)         :free-pval
-      :else                                  :disallowed)))
+      (exceptions-value cp)                  [(exceptions-value cp) :exceptions]
+      (backwards-compatible? cp)             [(backwards-compatible? cp) :backwards-compatible]
+      (not assigned?)                        [:unassigned :unassigned]
+      (ascii7? cp)                           [:pvalid :ascii7]
+      (join-control? cp)                     [:contextj :join-control]
+      (old-hangul-jamo? cp)                  [:disallowed :old-hangul-jamo]
+      (precis-ignorable? derived-props cp)   [:disallowed :precis-ignorable-properties]
+      (control? unicode-data cp)             [:disallowed :controls]
+      (has-compat? unicode-data cp)          [:free-pval :has-compat]
+      (letter-digits? unicode-data cp)       [:pvalid :letter-digits]
+      (other-letter-digits? unicode-data cp) [:free-pval :other-letter-digits]
+      (spaces? unicode-data cp)              [:free-pval :spaces]
+      (symbols? unicode-data cp)             [:free-pval :symbols]
+      (punctuation? unicode-data cp)         [:free-pval :punctuation]
+      :else                                  [:disallowed :other])))
+
+(defn build-props-vector
+  "Build a vector of PRECIS properties for all codepoints using transients for performance.
+    Returns a vector where index = codepoint, value = [property reason] tuple"
+  [unicode-data derived-props]
+  (let [size (long 0x110000)
+        v    (transient (vec (repeat size nil)))]
+    (loop [^long cp 0]
+      (if (< cp size)
+        (do
+          (assoc! v cp (common/derive-precis-property unicode-data derived-props cp))
+          (recur (unchecked-inc cp)))
+        (persistent! v)))))
 
 ;; IANA CSV processing functions
 (defn parse-codepoint-range-iana
@@ -371,53 +424,6 @@
           (reset! iana-exceptions-cache @exceptions-map))
         (reset! iana-exceptions-cache {}))))
   @iana-exceptions-cache)
-
-;; Unified PRECIS property derivation with version-aware special cases
-(defn derive-precis-property
-  "Unified PRECIS derivation with version-aware special case handling
-   
-   This function applies overrides in the following precedence order:
-   1. UNASSIGNED characters stay UNASSIGNED (version-dependent assignment status)
-   2. IANA expert overrides for assigned characters (applied to all versions)  
-   3. Version-aware special cases for assigned characters
-   4. Standard RFC 8264 algorithm
-   
-   Special cases handled:
-   - U+180B-180D: Mongolian FVS1-3 always DISALLOWED (expert precedent)
-   - U+180F: Mongolian FVS4 DISALLOWED when assigned (Unicode 14.0.0+)
-   - U+111C9: Sharada Sandhi Mark transitions FREE_PVAL->PVALID in Unicode 11.0.0
-   - U+166D: Canadian Syllabics Chi Sign (documented transition case)"
-  [unicode-data derived-props cp version]
-  (let [assigned?      (contains? unicode-data cp)
-        iana-overrides (load-iana-exceptions-cached)]
-    (cond
-      ;; 1. Check for noncharacters first (even if unassigned, they should be DISALLOWED)
-      (precis-ignorable? derived-props cp) :disallowed
-
-      ;; 2. UNASSIGNED characters stay UNASSIGNED (critical for version accuracy)
-      (not assigned?) :unassigned
-
-      ;; 3. IANA expert overrides for assigned characters (all versions)
-      ;; BUT only if the IANA override is not UNASSIGNED (since assignment status is version-dependent)
-      (and (contains? iana-overrides cp)
-           (not= (get iana-overrides cp) :unassigned)) (get iana-overrides cp)
-
-      ;; 4. Version-aware special cases for assigned characters
-      ;; U+180B-180D: Mongolian FVS1-3 always DISALLOWED (assigned since Unicode 6.3.0)
-      (<= 0x180B cp 0x180D) :disallowed
-
-      ;; U+180F: Mongolian FVS4 DISALLOWED when assigned (Unicode 14.0.0+)
-      (and (= cp 0x180F) (version-gte? version "14.0.0")) :disallowed
-
-      ;; U+111C9: Sharada Sandhi Mark - property transition in Unicode 11.0.0
-      (and (= cp 0x111C9) (version-lt? version "11.0.0"))  :free-pval
-      (and (= cp 0x111C9) (version-gte? version "11.0.0")) :pvalid
-
-      ;; U+166D: Canadian Syllabics Chi Sign - documented transition case
-      ;; (The property change doesn't affect derived value, but included for completeness)
-
-      ;; 5. Standard RFC 8264 algorithm
-      :else (derive-precis-property-rfc8264 unicode-data derived-props cp))))
 
 (defn iana-compatible-name
   "Convert character names to IANA-compatible format following Ruby qTris transformations"
@@ -528,27 +534,30 @@
             (ucd-style-name unicode-data start)
             (ucd-style-name unicode-data end))))
 
+(defn iana-prop-name [prop]
+  (case prop
+    :free-pval  "ID_DIS or FREE_PVAL"
+    :pvalid     "PVALID"
+    :disallowed "DISALLOWED"
+    :unassigned "UNASSIGNED"
+    :contextj   "CONTEXTJ"
+    :contexto   "CONTEXTO"
+    (str/upper-case (name prop))))
+
 (defn write-iana-csv
   "Write IANA CSV format with proper escaping and range compression"
   [output-file unicode-data properties]
-  (let [ranges (compress-ranges properties)]
+  (let [ranges (compress-ranges-vec properties)]
     (println (format "  Writing iana.csv (%,d ranges)" (count ranges)))
 
     (with-open [writer (io/writer output-file)]
       (.write writer "Codepoint,Property,Description\r\n")
 
-      (doseq [[start end prop] ranges]
+      (doseq [[start end [prop _reason]] ranges]
         (let [range-str   (if (= start end)
                             (format "%04X" start)
                             (format "%04X-%04X" start end))
-              prop-str    (case prop
-                            :free-pval  "ID_DIS or FREE_PVAL"
-                            :pvalid     "PVALID"
-                            :disallowed "DISALLOWED"
-                            :unassigned "UNASSIGNED"
-                            :contextj   "CONTEXTJ"
-                            :contexto   "CONTEXTO"
-                            (str/upper-case (name prop)))
+              prop-str    (iana-prop-name prop)
               description (iana-range-description unicode-data start end)]
 
           (.write writer (format "%s,%s,%s\r\n"
@@ -584,3 +593,12 @@
          (filter #(re-matches #"\d+\.\d+\.\d+" %))
          (sort version-compare)
          vec)))
+
+(defn version-to-short-format
+  "Convert version from X.Y.Z format to X.Y format for filename generation"
+  [version]
+  (let [parts (str/split version #"\.")]
+    (str (first parts) "." (second parts))))
+
+(defn python-filename-format [version]
+  (str "derived-props-" (version-to-short-format version) ".txt"))

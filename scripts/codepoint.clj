@@ -20,11 +20,11 @@
 (defn test-codepoint
   "Test and diagnose PRECIS classification for a given codepoint across Unicode versions"
   [cp-hex versions]
+  (println "Loading unicode data")
   (let [cp           (common/parse-hex cp-hex)
         version-data (load-unicode-data-for-versions versions cp)]
 
     (printf "=== CODEPOINT U+%s (%d) ===\n" cp-hex cp)
-
     (let [first-version (first versions)
           first-entry   (get-in version-data [first-version :entry])]
       (if first-entry
