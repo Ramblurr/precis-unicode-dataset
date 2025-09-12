@@ -279,7 +279,9 @@
       (println (format "Error: %s" (.getMessage e)))
       (when-let [data (ex-data e)]
         (println (format "Details: %s" data)))
-      (System/exit 1))))
+      (System/exit 1))
+    (finally
+      (shutdown-agents))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))

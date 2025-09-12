@@ -2,3 +2,6 @@ reference/scratch/
 data/*
 .clj-kondo
 .*
+icu-*
+__pycache__
+archive/

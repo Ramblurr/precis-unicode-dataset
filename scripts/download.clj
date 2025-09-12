@@ -213,12 +213,15 @@
     (download-versions versions)))
 
 (defn -main [& args]
-  (download-precis-python-refs)
-  (ensure-reference-files)
+  (try
+    (download-precis-python-refs)
+    (ensure-reference-files)
 
-  (if (some #{"--new"} args)
-    (handle-new-flag)
-    (handle-normal-operation args)))
+    (if (some #{"--new"} args)
+      (handle-new-flag)
+      (handle-normal-operation args))
+    (finally
+      (shutdown-agents))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))

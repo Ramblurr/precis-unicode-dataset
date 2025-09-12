@@ -1,0 +1,7 @@
+{:paths ["scripts"]
+ :deps  {com.ibm.icu/icu4j        {:mvn/version "78.0.1-SNAPSHOT"}
+         org.clojure/data.csv     {:mvn/version "1.1.0"}
+         rewrite-clj/rewrite-clj  {:mvn/version "1.2.50"}
+         babashka/fs              {:mvn/version "0.5.27"}
+         org.babashka/http-client {:mvn/version "0.4.23"}
+         babashka/process         {:mvn/version "0.6.23"}}}

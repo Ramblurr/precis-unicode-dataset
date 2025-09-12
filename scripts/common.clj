@@ -1,5 +1,6 @@
 (ns common
   (:require
+   [icu-helper :refer [norm-nfkc]]
    [babashka.http-client :as http]
    [clojure.data.csv :as csv]
    [clojure.java.io :as io]
@@ -266,7 +267,7 @@
   (let [char (cond
                (<= cp 0xFFFF) (str (char cp))
                :else          (String. (int-array [cp]) 0 1))
-        nfkc (java.text.Normalizer/normalize char java.text.Normalizer$Form/NFKC)]
+        nfkc (norm-nfkc char)]
     (not= char nfkc)))
 
 (defn non-character?
@@ -357,7 +358,7 @@
     Returns a vector where index = codepoint, value = [property reason] tuple"
   [unicode-data derived-props]
   (let [size (long 0x110000)]
-    (loop [^long cp 0
+    (loop [cp 0
            v        (transient (vec (repeat size nil)))]
       (if (< cp size)
         (recur (unchecked-inc cp)

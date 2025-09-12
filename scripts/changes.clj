@@ -83,14 +83,14 @@
   (doseq [{:keys [version props]} (vals all-props)]
     (common/write-python-txt common/generated-dir props version)))
 
-(defn write-iana-6.3-edn
+(defn write-iana-63-edn
   "Save complete PRECIS mappings to file for verification"
   [mappings]
   (let [output-file (str common/generated-dir "/precis-mappings-6.3.0.edn")]
     (.mkdirs (io/file common/generated-dir))
     (spit output-file (pr-str mappings))))
 
-(defn write-iana-6.3-csv
+(defn write-iana-63-csv
   "Generate IANA-compatible CSV output format matching exact IANA formatting"
   [mappings unicode-data]
   (let [output-file (str common/generated-dir "/precis-tables-6.3.0.csv")]
@@ -103,8 +103,8 @@
   [all-props]
   (when-let [{:keys [props unicode-data]} (get all-props "6.3.0")]
     (println "Generating IANA outputs for Unicode 6.3.0...")
-    (write-iana-6.3-edn props)
-    (write-iana-6.3-csv props unicode-data)))
+    (write-iana-63-edn props)
+    (write-iana-63-csv props unicode-data)))
 
 (defn generate-change-tables
   "Generate change tables between adjacent Unicode versions"
@@ -124,17 +124,20 @@
     unicode-versions))
 
 (defn -main [& args]
-  (let [unicode-versions (common/discover-unicode-versions common/unicode-base-path)
-        version-subset   (match-versions unicode-versions args)]
-    (if (seq version-subset)
-      (let [all-props (build-all-version-properties version-subset)]
-        (generate-iana-outputs all-props)
-        (write-python-txt-all-versions all-props)
-        (if (<= (count version-subset) 1)
-          (println "Cannot generate change tables when only one version is provided")
-          (generate-change-tables all-props version-subset))
-        (println "All outputs generated! Run: bb verify"))
-      (println "No Unicode versions found in" common/unicode-base-path))))
+  (try
+    (let [unicode-versions (common/discover-unicode-versions common/unicode-base-path)
+          version-subset   (match-versions unicode-versions args)]
+      (if (seq version-subset)
+        (let [all-props (build-all-version-properties version-subset)]
+          (generate-iana-outputs all-props)
+          (write-python-txt-all-versions all-props)
+          (if (<= (count version-subset) 1)
+            (println "Cannot generate change tables when only one version is provided")
+            (generate-change-tables all-props version-subset))
+          (println "All outputs generated! Run: bb verify"))
+        (println "No Unicode versions found in" common/unicode-base-path)))
+    (finally
+      (shutdown-agents))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (-main))
