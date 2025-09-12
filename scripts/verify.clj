@@ -14,12 +14,28 @@
   since the reference draft only covers through Unicode 14.0."
   "14.0")
 
+(def max-python-unicode-version
+  "Maximum Unicode version covered by the Python precis_i18n library.
+  Files for Unicode versions above this are expected to be missing from extracted tables
+  since the Python library only covers through Unicode 16.0."
+  "16.0")
+
 (defn find-files
   "Find all .txt and .csv files in a directory using babashka.fs"
   [dir]
   (when (fs/exists? dir)
     (->> (concat (fs/glob dir "*.txt") (fs/glob dir "*.csv"))
          (map fs/file-name)
+         set)))
+
+(defn find-change-table-files
+  "Find only change table files (changes-*-from-unassigned.txt and changes-*-property-changes.txt)"
+  [dir]
+  (when (fs/exists? dir)
+    (->> (fs/glob dir "changes-*")
+         (map fs/file-name)
+         (filter #(or (str/ends-with? % "-from-unassigned.txt")
+                      (str/ends-with? % "-property-changes.txt")))
          set)))
 
 (defn unicode-version-from-filename
@@ -44,6 +60,12 @@
   (when-let [version (unicode-version-from-filename filename)]
     (> (common/version-compare version max-draft-unicode-version) 0)))
 
+(defn file-beyond-python-coverage?
+  "Check if file is for Unicode version beyond Python library coverage"
+  [filename]
+  (when-let [version (unicode-version-from-filename filename)]
+    (> (common/version-compare version max-python-unicode-version) 0)))
+
 (defn run-diff
   "Run diff -w on two files, return true if identical"
   [file1 file2]
@@ -61,11 +83,30 @@
                   [old-path new-path]))))
        (filter some?)))
 
+(defn get-diff-details
+  "Get detailed diff information for two files"
+  [file1 file2]
+  (let [result        (p/sh ["diff" "-u" file1 file2] {:continue true})
+        lines         (str/split-lines (:out result))
+        ;; Filter to just the actual diff lines (starting with + or -)
+        diff-lines    (->> lines
+                           (drop-while #(not (str/starts-with? % "@@")))
+                           (drop 1) ;; Skip the @@ line itself
+                           (filter #(or (str/starts-with? % "-")
+                                        (str/starts-with? % "+")))
+                           (remove #(or (str/starts-with? % "---")
+                                        (str/starts-with? % "+++"))))
+        removed-count (count (filter #(str/starts-with? % "-") diff-lines))
+        added-count   (count (filter #(str/starts-with? % "+") diff-lines))]
+    {:removed    removed-count
+     :added      added-count
+     :diff-lines (take 20 diff-lines)}))
+
 (defn verify-change-tables
   "Compare generated change table files against extracted reference files"
   []
-  (let [old-files       (find-files common/extracted-dir)
-        new-files       (find-files common/generated-dir)
+  (let [old-files       (find-change-table-files common/extracted-dir)
+        new-files       (find-change-table-files common/generated-dir)
         all-missing-old (clojure.set/difference new-files old-files)
         missing-old     (remove file-beyond-draft-coverage? all-missing-old)
         missing-new     (clojure.set/difference old-files new-files)
@@ -73,15 +114,12 @@
         mismatches      (check-file-differences common-files)
         has-errors?     (or (seq missing-old) (seq missing-new) (seq mismatches))]
 
-    (println "\n=== CHANGE TABLES VALIDATION ===")
-
-    ;; Print summary statistics
+    (println "\n━━━ VALIDATE AGAINST draft-nemoto-precis-unicode14-00 CHANGE TABLES ━━━")
     (println (format "Extracted files: %d" (count old-files)))
     (println (format "Generated files: %d" (count new-files)))
     (println (format "Common files: %d" (count common-files)))
     (println (format "Files beyond draft coverage (ignored): %d" (count (filter file-beyond-draft-coverage? all-missing-old))))
 
-    ;; Report missing files
     (when (seq missing-old)
       (println "\nGenerated files that have no extracted counterpart:")
       (doseq [file missing-old]
@@ -92,18 +130,34 @@
       (doseq [file missing-new]
         (println (format "  %s" file))))
 
-    ;; Report file differences
     (when (seq mismatches)
-      (println "\nFile differences found:")
+      (println "File differences summary")
       (doseq [[old-path new-path] mismatches]
-        (println (format "  diff -w %s %s" old-path new-path))))
+        (let [filename     (fs/file-name old-path)
+              diff-details (get-diff-details old-path new-path)]
+          (println (format "\n▶ %s" filename))
+          (println (format "  Lines removed from extracted: %d" (:removed diff-details)))
+          (println (format "  Lines added in generated: %d" (:added diff-details)))
+          (when (seq (:diff-lines diff-details))
+            (println "\n  First differences (max 10 each):")
+            (let [removed-lines (take 10 (filter #(str/starts-with? % "-") (:diff-lines diff-details)))
+                  added-lines   (take 10 (filter #(str/starts-with? % "+") (:diff-lines diff-details)))]
+              (when (seq removed-lines)
+                (println "  Extracted (expected):")
+                (doseq [line removed-lines]
+                  (println (format "    %s" line))))
+              (when (seq added-lines)
+                (println "  Generated (actual):")
+                (doseq [line added-lines]
+                  (println (format "    %s" line)))))))))
 
-    ;; Final result
     (if has-errors?
       (do
-        (println "\nChange tables validation: FAILED")
-        (System/exit 1))
-      (println "\nChange tables validation: PASSED"))))
+        (println "\nFAILED")
+        false)
+      (do
+        (println "\nPASSED")
+        true))))
 
 (defn compare-codepoint
   "Pure function to compare a single codepoint between IANA and our mappings"
@@ -149,9 +203,9 @@
     (println (format "  %s: %d" prop count)))
 
   (if (zero? mismatch-count)
-    (println "\nPRECIS algorithm validation: PASSED")
+    (println "\nPASSED")
     (do
-      (println (format "\nPRECIS algorithm validation: FAILED (%d discrepancies)" mismatch-count))
+      (println (format "\nFAILED (%d discrepancies)" mismatch-count))
       (print-first-mismatches mismatch-details 10)
 
       (let [by-iana-type (group-by :iana-prop mismatch-details)
@@ -170,16 +224,14 @@
   []
   (let [iana-file (str common/extracted-dir "/precis-tables-6.3.0.csv")]
 
-    (println "\n=== PRECIS ALGORITHM VALIDATION ===")
+    (println "\n━━━ VALIDATE AGAINST IANA 6.3.0 REGISTRY ━━━")
     (if (.exists (io/file iana-file))
-      (let [iana-data     (common/load-iana-csv iana-file)
-            iana-mappings (common/expand-iana-ranges-to-codepoints iana-data)
-            mappings-file (str common/generated-dir "/precis-mappings-6.3.0.edn")
-            our-props-vec (read-string (slurp mappings-file))
-            ;; Convert vector format (indexed by codepoint) to map format
-            our-mappings  (into {} (map-indexed (fn [cp [prop _reason]] [cp prop]) our-props-vec))
-            all-cps       (set (concat (keys iana-mappings) (keys our-mappings)))
-
+      (let [iana-data          (common/load-iana-csv iana-file)
+            iana-mappings      (common/expand-iana-ranges-to-codepoints iana-data)
+            mappings-file      (str common/generated-dir "/precis-mappings-6.3.0.edn")
+            our-props-vec      (read-string (slurp mappings-file))
+            our-mappings       (into {} (map-indexed (fn [cp [prop _reason]] [cp prop]) our-props-vec))
+            all-cps            (set (concat (keys iana-mappings) (keys our-mappings)))
             comparison-results (map #(compare-codepoint % iana-mappings our-mappings) all-cps)
             stats              (compute-validation-stats comparison-results)]
 
@@ -187,7 +239,7 @@
         (zero? (:mismatch-count stats)))
 
       (do
-        (println (format "PRECIS algorithm validation: FAILED (IANA CSV file not found: %s)" iana-file))
+        (println (format "FAILED (IANA CSV file not found: %s)" iana-file))
         false))))
 
 (defn verify-python-files
@@ -204,21 +256,22 @@
                                    (filter #(str/ends-with? % ".txt"))
                                    set)
         all-missing-extracted (set/difference generated-files extracted-files)
-        missing-extracted     (remove file-beyond-draft-coverage? all-missing-extracted)
+        missing-extracted     (->> all-missing-extracted
+                                   (remove file-beyond-python-coverage?)
+                                   ;; upstream does not have the 7.0 file
+                                   (remove #(= % "derived-props-7.0.txt")))
         missing-generated     (set/difference extracted-files generated-files)
         common-files          (set/intersection extracted-files generated-files)
         mismatches            (check-file-differences common-files)
         has-errors?           (or (seq missing-extracted) (seq missing-generated) (seq mismatches))]
 
-    (println "\n=== PYTHON DERIVED-PROPS FILES VALIDATION ===")
+    (println "\n━━━ VALIDATE AGAINST PYTHON DERIVED-PROPS ━━━")
 
-    ;; Print summary statistics
     (println (format "Extracted Python files: %d" (count extracted-files)))
     (println (format "Generated Python files: %d" (count generated-files)))
     (println (format "Common Python files: %d" (count common-files)))
-    (println (format "Files beyond draft coverage (ignored): %d" (count (filter file-beyond-draft-coverage? all-missing-extracted))))
+    (println (format "Files beyond Python coverage (ignored): %d" (count (filter file-beyond-python-coverage? all-missing-extracted))))
 
-    ;; Report missing files
     (when (seq missing-extracted)
       (println "\nGenerated Python files that have no extracted counterpart:")
       (doseq [file missing-extracted]
@@ -229,27 +282,26 @@
       (doseq [file missing-generated]
         (println (format "  %s" file))))
 
-    ;; Report file differences
     (when (seq mismatches)
       (println "\nPython file differences found:")
       (doseq [[old-path new-path] mismatches]
         (println (format "  diff -w %s %s" old-path new-path))))
 
-    ;; Final result
     (if has-errors?
       (do
-        (println "\nPython derived-props validation: FAILED")
+        (println "\nFAILED")
         false)
       (do
-        (println "\nPython derived-props validation: PASSED")
+        (println "\nPASSED")
         true))))
 
 (defn -main [& _]
+
   (let [iana-result   (validate-against-iana-6-3-0)
-        python-result (verify-python-files)]
-    (verify-change-tables)
-    ;; Exit with error code if any validation failed
-    (when (or (not iana-result) (not python-result))
+        python-result (verify-python-files)
+        tables-result (verify-change-tables)]
+
+    (when-not (and iana-result python-result tables-result)
       (System/exit 1))))
 
 (when (= *file* (System/getProperty "babashka.file"))
