@@ -308,7 +308,7 @@ Code points that changed derived property value from other than UNASSIGNED: 1
 
 There are changes made to Unicode between version 10.0.0 and 11.0.0 that impact PRECIS calculation of the derived property values.
 
-Change of SHARADA SANDHI MARK (U+111C9) added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass.
+Note: Change of SHARADA SANDHI MARK (U+111C9) affects PRECIS calculation of the derived property values in IdentifierClass.
 PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 is ID_DIS or FREE_PVAL, however in Unicode 11.0.0 is PVALID.
 
 ### Changes between Unicode 11.0.0 and 12.0.0
@@ -327,7 +327,7 @@ Code points that changed derived property value from other than UNASSIGNED: 0
 
 There are no changes made to Unicode between version 11.0.0 and 12.0.0 that impact PRECIS calculation of the derived property values.
 
-Unicode General Properties of CANADIAN SYLLABICS CHI SIGN (U+166D) was changed from Po to So in Unicode 12.0.0.
+Note: Unicode General Properties of CANADIAN SYLLABICS CHI SIGN (U+166D) was changed from Po to So in Unicode 12.0.0.
 This change has changed the basis for calculating of the derived property value from Punctuation (P) to Symbols (O).
 However, this change does not affect the calculation result.
 
@@ -399,12 +399,12 @@ There are no changes made to Unicode between version 15.0.0 and 16.0.0 that impa
 
 Change in number of characters in each category:
 
-- PVALID changed from 140,020 to 144,715 (+4,695)
+- PVALID changed from 140,020 to 144,716 (+4,696)
 - UNASSIGNED changed from 819,467 to 814,664 (-4,803)
 - CONTEXTJ did not change, at 2
 - CONTEXTO did not change, at 25
 - DISALLOWED did not change, at 140,449
-- ID_DIS or FREE_PVAL changed from 14,149 to 14,257 (+108)
+- ID_DIS or FREE_PVAL changed from 14,149 to 14,256 (+107)
 - TOTAL did not change, at 1,114,112
 
 Code points that changed derived property value from other than UNASSIGNED: 0

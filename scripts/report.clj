@@ -7,11 +7,7 @@
    [common :as common]))
 
 (defrecord PropertyStats [pvalid unassigned contextj contexto disallowed free-pval total])
-
-(def data-dir "data")
-(def get-unicode-versions (memoize #(common/discover-unicode-versions data-dir)))
-
-(def output-file "REPORT.md")
+(def output-file "reference/REPORT.md")
 
 (defn parse-property-line
   "Parse a single line from a table file"
@@ -73,7 +69,13 @@
      (get counts :contexto 0)
      (get counts :disallowed 0)
      (get counts :free-pval 0)
-     1114112))) ; Total Unicode codepoints
+     (+
+      (get counts :pvalid 0)
+      (get counts :unassigned 0)
+      (get counts :contextj 0)
+      (get counts :contexto 0)
+      (get counts :disallowed 0)
+      (get counts :free-pval 0)))))
 
 (defn load-iana-baseline
   "Load IANA 6.3.0 baseline for comparison"
@@ -106,24 +108,14 @@
 (defn process-version-change
   "Process changes between two Unicode versions"
   [from-version to-version baseline-props]
-  (let [from-unassigned-file  (str common/generated-dir "/changes-" from-version "-" to-version "-from-unassigned.txt")
-        property-changes-file (str common/generated-dir "/changes-" from-version "-" to-version "-property-changes.txt")
-
-        ;; Read the change files
-        from-unassigned  (read-table-file from-unassigned-file)
-        property-changes (read-table-file property-changes-file)
-
-        ;; Calculate how many codepoints changed
-        unassigned-changes (expand-ranges from-unassigned)
-        prop-changes       (expand-ranges property-changes)
-
-        ;; Apply changes to baseline using pure function
-        updated-props (apply-property-changes baseline-props unassigned-changes prop-changes)
-
-        ;; Calculate stats after changes
-        after-stats (calculate-property-stats updated-props)
-
-        ;; Count of changes from non-UNASSIGNED properties
+  (let [from-unassigned-file   (str common/generated-dir "/changes-" from-version "-" to-version "-from-unassigned.txt")
+        property-changes-file  (str common/generated-dir "/changes-" from-version "-" to-version "-property-changes.txt")
+        from-unassigned        (read-table-file from-unassigned-file)
+        property-changes       (read-table-file property-changes-file)
+        unassigned-changes     (expand-ranges from-unassigned)
+        prop-changes           (expand-ranges property-changes)
+        updated-props          (apply-property-changes baseline-props unassigned-changes prop-changes)
+        after-stats            (calculate-property-stats updated-props)
         non-unassigned-changes (count prop-changes)]
 
     {:from-version           from-version
@@ -161,22 +153,16 @@
        ;; 10.0.0 -> 11.0.0
        (and (= from-version "10.0.0") (= to-version "11.0.0"))
        [""
-        "Change of SHARADA SANDHI MARK (U+111C9) added in Unicode 8.0.0 affects PRECIS calculation of the derived property values in IdentifierClass."
+        "Note: Change of SHARADA SANDHI MARK (U+111C9) affects PRECIS calculation of the derived property values in IdentifierClass."
         "PRECIS Derived Property Value of this between Unicode 8.0.0 and Unicode 10.0.0 is ID_DIS or FREE_PVAL, however in Unicode 11.0.0 is PVALID."]
 
        ;; 11.0.0 -> 12.0.0
        (and (= from-version "11.0.0") (= to-version "12.0.0"))
        [""
-        "Unicode General Properties of CANADIAN SYLLABICS CHI SIGN (U+166D) was changed from Po to So in Unicode 12.0.0."
+        "Note: Unicode General Properties of CANADIAN SYLLABICS CHI SIGN (U+166D) was changed from Po to So in Unicode 12.0.0."
         "This change has changed the basis for calculating of the derived property value from Punctuation (P) to Symbols (O)."
         "However, this change does not affect the calculation result."]
 
-       ;; 13.0.0 -> 14.0.0
-       (and (= from-version "13.0.0") (= to-version "14.0.0"))
-       [""
-        "MONGOLIAN FREE VARIATION SELECTOR FOUR (U+180F) transitions from UNASSIGNED to DISALLOWED."]
-
-       ;; Default - no additional notes
        :else
        []))))
 
@@ -231,7 +217,7 @@
   (let [baseline-props (load-iana-baseline)
         baseline-stats (calculate-property-stats baseline-props)
 
-        unicode-versions (get-unicode-versions)
+        unicode-versions (common/discover-unicode-versions common/unicode-base-path)
         version-pairs    (partition 2 1 unicode-versions)
 
         report-sections (reduce
