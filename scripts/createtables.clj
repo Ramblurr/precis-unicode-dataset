@@ -1,8 +1,9 @@
 #!/usr/bin/env bb
 (ns createtables
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
-            [common :as common :refer [all-codepoints]]))
+  (:require
+   [clojure.java.io :as io]
+   [clojure.string :as str]
+   [common :as common :refer [all-codepoints]]))
 
 (def unicode-base-path "data")
 (def output-base-path "tables")
@@ -42,7 +43,7 @@
       (persistent! result)
       (let [cp   (first remaining)
             ;; Use unified derive-precis-property function with version awareness
-            prop (common/derive-precis-property unicode-data derived-props cp version)]
+            prop (common/derive-precis-property unicode-data derived-props cp)]
         (recur (assoc! result cp prop)
                (rest remaining)
                (inc count))))))
@@ -52,13 +53,13 @@
   [unicode-data derived-props cp]
   (let [assigned? (contains? unicode-data cp)]
     (cond
-      (not assigned?)                               ""
+      (common/unassigned? unicode-data cp)          "J"
       (common/ascii7? cp)                           "K"
       (common/join-control? cp)                     "H"
       (common/old-hangul-jamo? cp)                  "I"
       (common/precis-ignorable? derived-props cp)   "M"
       (common/control? unicode-data cp)             "L"
-      (common/has-compat? unicode-data cp)          "F"
+      (common/has-compat? cp)                       "F"
       (common/letter-digits? unicode-data cp)       "A"
       (common/other-letter-digits? unicode-data cp) "B"
       (common/spaces? unicode-data cp)              "N"

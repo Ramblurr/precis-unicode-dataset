@@ -5,6 +5,7 @@
    [babashka.process :as p]
    [clojure.java.io :as io]
    [clojure.set :as set]
+   [clojure.string :as str]
    [common :as common]))
 
 (def max-draft-unicode-version
@@ -174,7 +175,9 @@
       (let [iana-data     (common/load-iana-csv iana-file)
             iana-mappings (common/expand-iana-ranges-to-codepoints iana-data)
             mappings-file (str common/generated-dir "/precis-mappings-6.3.0.edn")
-            our-mappings  (read-string (slurp mappings-file))
+            our-props-vec (read-string (slurp mappings-file))
+            ;; Convert vector format (indexed by codepoint) to map format
+            our-mappings  (into {} (map-indexed (fn [cp [prop _reason]] [cp prop]) our-props-vec))
             all-cps       (set (concat (keys iana-mappings) (keys our-mappings)))
 
             comparison-results (map #(compare-codepoint % iana-mappings our-mappings) all-cps)
@@ -187,9 +190,67 @@
         (println (format "PRECIS algorithm validation: FAILED (IANA CSV file not found: %s)" iana-file))
         false))))
 
+(defn verify-python-files
+  "Compare generated Python derived-props files against extracted reference files"
+  []
+  (let [extracted-dir         common/extracted-dir
+        generated-dir         common/generated-dir
+        extracted-files       (->> (find-files extracted-dir)
+                                   (filter #(str/starts-with? % "derived-props-"))
+                                   (filter #(str/ends-with? % ".txt"))
+                                   set)
+        generated-files       (->> (find-files generated-dir)
+                                   (filter #(str/starts-with? % "derived-props-"))
+                                   (filter #(str/ends-with? % ".txt"))
+                                   set)
+        all-missing-extracted (set/difference generated-files extracted-files)
+        missing-extracted     (remove file-beyond-draft-coverage? all-missing-extracted)
+        missing-generated     (set/difference extracted-files generated-files)
+        common-files          (set/intersection extracted-files generated-files)
+        mismatches            (check-file-differences common-files)
+        has-errors?           (or (seq missing-extracted) (seq missing-generated) (seq mismatches))]
+
+    (println "\n=== PYTHON DERIVED-PROPS FILES VALIDATION ===")
+
+    ;; Print summary statistics
+    (println (format "Extracted Python files: %d" (count extracted-files)))
+    (println (format "Generated Python files: %d" (count generated-files)))
+    (println (format "Common Python files: %d" (count common-files)))
+    (println (format "Files beyond draft coverage (ignored): %d" (count (filter file-beyond-draft-coverage? all-missing-extracted))))
+
+    ;; Report missing files
+    (when (seq missing-extracted)
+      (println "\nGenerated Python files that have no extracted counterpart:")
+      (doseq [file missing-extracted]
+        (println (format "  %s" file))))
+
+    (when (seq missing-generated)
+      (println "\nExtracted Python files that have no generated counterpart:")
+      (doseq [file missing-generated]
+        (println (format "  %s" file))))
+
+    ;; Report file differences
+    (when (seq mismatches)
+      (println "\nPython file differences found:")
+      (doseq [[old-path new-path] mismatches]
+        (println (format "  diff -w %s %s" old-path new-path))))
+
+    ;; Final result
+    (if has-errors?
+      (do
+        (println "\nPython derived-props validation: FAILED")
+        false)
+      (do
+        (println "\nPython derived-props validation: PASSED")
+        true))))
+
 (defn -main [& _]
-  (validate-against-iana-6-3-0)
-  (verify-change-tables))
+  (let [iana-result   (validate-against-iana-6-3-0)
+        python-result (verify-python-files)]
+    (verify-change-tables)
+    ;; Exit with error code if any validation failed
+    (when (or (not iana-result) (not python-result))
+      (System/exit 1))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))

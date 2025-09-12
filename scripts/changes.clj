@@ -1,8 +1,8 @@
 #!/usr/bin/env bb
 (ns changes
   (:require
-   [clojure.set :as set]
    [clojure.java.io :as io]
+   [clojure.set :as set]
    [clojure.string :as str]
    [common :as common]))
 
@@ -26,7 +26,6 @@
   [filepath unicode-data changes]
   (when (seq changes)
     (let [ranges (common/compress-ranges-map changes)]
-      (println ranges)
       (with-open [writer (io/writer filepath)]
         (let [lines     (for [[start end [prop _reason]] ranges]
                           (let [range-str  (common/range-format [start end])
@@ -83,22 +82,25 @@
         (write-table-file (str base-filename suffix ".txt")
                           to-unicode existing-change)))))
 
+(defn build-version-properties [version]
+  (let [unicode-dir   (str unicode-base-path "/" version)
+        unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
+        derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
+        props-vec     (common/build-props-vector unicode-data derived-props)]
+    [version {:props props-vec :unicode-data unicode-data :version version}]))
+
 (defn build-all-version-properties
   "Build PRECIS properties for all discovered Unicode versions (single pass per version)"
   [versions]
   (println (format "Deriving PRECIS property values for unicode %s in parallel" (str/join ", " versions)))
   (->> versions
-       (pmap (fn [version]
-               (let [unicode-dir   (str unicode-base-path "/" version)
-                     unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
-                     derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
-                     props-vec     (common/build-props-vector unicode-data derived-props)]
-                 [version {:props props-vec :unicode-data unicode-data :version version}])))
+       (pmap build-version-properties)
        (into {})))
 
 (defn write-python-txt
   [props version]
-  (let [output-file    (str output-base-path (common/python-filename-format version))]
+  (let [output-file (str output-base-path "/" (common/python-filename-format version))]
+    (println "  Writing " output-file)
     (.mkdirs (io/file output-base-path))
     (let [ranges (common/compress-ranges-vec props)]
       (with-open [writer (io/writer output-file)]
@@ -113,9 +115,8 @@
 (defn write-python-txt-all-versions
   "Generate Python txt files for all Unicode versions"
   [all-props]
-  (println "Generating Python txt files for all versions...")
+  (println "Generating Python txt files for " (keys all-props))
   (doseq [{:keys [version props]} (vals all-props)]
-    (println (format "  Writing derived-props-%s.txt" version))
     (write-python-txt props version)))
 
 (defn write-iana-6.3-edn

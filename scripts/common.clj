@@ -1,8 +1,9 @@
 (ns common
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
-            [clojure.data.csv :as csv]
-            [babashka.http-client :as http]))
+  (:require
+   [babashka.http-client :as http]
+   [clojure.data.csv :as csv]
+   [clojure.java.io :as io]
+   [clojure.string :as str]))
 
 ;; All Unicode codepoints 0x0000 to 0x10FFFF
 (def all-codepoints (range 0x0000 0x110000))
@@ -49,7 +50,7 @@
   "Compress consecutive codepoints with same property into ranges
   Input: vector where index=codepoint, value=[derived-property-value reason]
   Output: vector of [start end [derived-property-value reason]]"
-  [props-vec]
+  [props-vec & {:keys [with-reason?] :or {with-reason? true}}]
   (let [ranges-t (transient [])]
     (loop [current-start nil
            current-end   nil
@@ -60,9 +61,10 @@
           (when current-start
             (conj! ranges-t [current-start current-end current-prop]))
           (persistent! ranges-t))
-        (let [prop-tuple (nth props-vec cp)]
+        (let [prop-tuple  (nth props-vec cp)
+              compare-val (if with-reason? prop-tuple (first prop-tuple))]
           (if (and current-start
-                   (= prop-tuple current-prop)
+                   (= compare-val (if with-reason? current-prop (first current-prop)))
                    (= cp (inc current-end)))
             ;; Extend current range
             (recur current-start cp prop-tuple (inc cp))
@@ -115,9 +117,9 @@
         parsed-v2 (parse-version v2)]
     (cond
       (and parsed-v1 parsed-v2) (compare parsed-v1 parsed-v2)
-      parsed-v1                 -1  ; v1 is valid, v2 is not
-      parsed-v2                 1   ; v2 is valid, v1 is not
-      :else                     0)))    ; both are invalid
+      parsed-v1                 -1   ;; v1 is valid, v2 is not
+      parsed-v2                 1    ;; v2 is valid, v1 is not
+      :else                     0))) ;; both are invalid
 
 (defn version-gte?
   "Check if version v1 is greater than or equal to v2"
@@ -249,22 +251,13 @@
     (contains? #{"Pc" "Pd" "Ps" "Pe" "Pi" "Pf" "Po"} gc)))
 
 (defn has-compat?
-  "HasCompat (Q): Has compatibility decomposition"
-  [unicode-data cp]
-  (let [decomp (get-in unicode-data [cp :decomposition])]
-    (and (not (str/blank? decomp))
-         (or
-          ;; Has explicit compatibility tag like <font>, <square>, etc.
-          (str/starts-with? decomp "<")
-          ;; CJK compatibility ideographs in specific ranges
-          (and (re-matches #"[0-9A-F]+" decomp) ;; Single codepoint decomposition
-               (or (<= 0xF900 cp 0xFAFF)        ;; CJK Compatibility Ideographs
-                   (<= 0x2F800 cp 0x2FA1F)))    ;; CJK Compatibility Ideographs Supplement
-          ;; Specific compatibility characters with direct mappings
-          (contains? #{0x2126  ;; OHM SIGN -> GREEK CAPITAL LETTER OMEGA
-                       0x212A  ;; KELVIN SIGN -> LATIN CAPITAL LETTER K
-                       0x212B} ;; ANGSTROM SIGN -> LATIN CAPITAL LETTER A WITH RING ABOVE
-                     cp)))))
+  "HasCompat (Q): toNFKC(cp) != cp"
+  [cp]
+  (let [char (cond
+               (<= cp 0xFFFF) (str (char cp))
+               :else          (String. (int-array [cp]) 0 1))
+        nfkc (java.text.Normalizer/normalize char java.text.Normalizer$Form/NFKC)]
+    (not= char nfkc)))
 
 (defn precis-ignorable?
   "PrecisIgnorableProperties (M): Default_Ignorable_Code_Point or Noncharacter_Code_Point"
@@ -312,41 +305,50 @@
 (defn backwards-compatible? [_cp]
   false)
 
+(defn unassigned?
+  "Unassigned (J): General_Category(cp) is in {Cn} and Noncharacter_Code_Point(cp) = False
+   Per RFC 5892 Section 2.10"
+  [unicode-data cp]
+  (let [assigned? (contains? unicode-data cp)]
+    (and (not assigned?)  ;; General_Category = "Cn" (implicit when not in Unicode data)
+         (not (or (<= 0xFDD0 cp 0xFDEF)           ;; Not a noncharacter
+                  (= (bit-and cp 0xFFFF) 0xFFFE)
+                  (= (bit-and cp 0xFFFF) 0xFFFF))))))
+
 (defn derive-precis-property
   "Apply pure RFC 8264 PRECIS derivation algorithm as per Section 8
 
   Returns a tuple of [property-value reaason]
   "
   [unicode-data derived-props cp]
-  (let [assigned? (contains? unicode-data cp)]
-    (cond
-      (exceptions-value cp)                  [(exceptions-value cp) :exceptions]
-      (backwards-compatible? cp)             [(backwards-compatible? cp) :backwards-compatible]
-      (not assigned?)                        [:unassigned :unassigned]
-      (ascii7? cp)                           [:pvalid :ascii7]
-      (join-control? cp)                     [:contextj :join-control]
-      (old-hangul-jamo? cp)                  [:disallowed :old-hangul-jamo]
-      (precis-ignorable? derived-props cp)   [:disallowed :precis-ignorable-properties]
-      (control? unicode-data cp)             [:disallowed :controls]
-      (has-compat? unicode-data cp)          [:free-pval :has-compat]
-      (letter-digits? unicode-data cp)       [:pvalid :letter-digits]
-      (other-letter-digits? unicode-data cp) [:free-pval :other-letter-digits]
-      (spaces? unicode-data cp)              [:free-pval :spaces]
-      (symbols? unicode-data cp)             [:free-pval :symbols]
-      (punctuation? unicode-data cp)         [:free-pval :punctuation]
-      :else                                  [:disallowed :other])))
+  (cond
+    ;; the order of these cond expressions are critical
+    (exceptions-value cp)                  [(exceptions-value cp) :exceptions]
+    (backwards-compatible? cp)             [(backwards-compatible? cp) :backwards-compatible]
+    (unassigned? unicode-data cp)          [:unassigned :unassigned]
+    (ascii7? cp)                           [:pvalid :ascii7]
+    (join-control? cp)                     [:contextj :join-control]
+    (old-hangul-jamo? cp)                  [:disallowed :old-hangul-jamo]
+    (precis-ignorable? derived-props cp)   [:disallowed :precis-ignorable-properties]
+    (control? unicode-data cp)             [:disallowed :controls]
+    (has-compat? cp)                       [:free-pval :has-compat]
+    (letter-digits? unicode-data cp)       [:pvalid :letter-digits]
+    (other-letter-digits? unicode-data cp) [:free-pval :other-letter-digits]
+    (spaces? unicode-data cp)              [:free-pval :spaces]
+    (symbols? unicode-data cp)             [:free-pval :symbols]
+    (punctuation? unicode-data cp)         [:free-pval :punctuation]
+    :else                                  [:disallowed :other]))
 
 (defn build-props-vector
   "Build a vector of PRECIS properties for all codepoints using transients for performance.
     Returns a vector where index = codepoint, value = [property reason] tuple"
   [unicode-data derived-props]
-  (let [size (long 0x110000)
-        v    (transient (vec (repeat size nil)))]
-    (loop [^long cp 0]
+  (let [size (long 0x110000)]
+    (loop [^long cp 0
+           v        (transient (vec (repeat size nil)))]
       (if (< cp size)
-        (do
-          (assoc! v cp (common/derive-precis-property unicode-data derived-props cp))
-          (recur (unchecked-inc cp)))
+        (recur (unchecked-inc cp)
+               (assoc! v cp (common/derive-precis-property unicode-data derived-props cp)))
         (persistent! v)))))
 
 ;; IANA CSV processing functions
@@ -547,7 +549,7 @@
 (defn write-iana-csv
   "Write IANA CSV format with proper escaping and range compression"
   [output-file unicode-data properties]
-  (let [ranges (compress-ranges-vec properties)]
+  (let [ranges (compress-ranges-vec properties :with-reason? false)]
     (println (format "  Writing iana.csv (%,d ranges)" (count ranges)))
 
     (with-open [writer (io/writer output-file)]
