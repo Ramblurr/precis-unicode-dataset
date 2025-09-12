@@ -1,26 +1,25 @@
 {:paths ["scripts"]
  :deps  {}
- :tasks {:requires    ([babashka.fs :as fs]
-                       [packer_task])
+ :tasks {:requires    ([babashka.fs :as fs])
          download     {:doc  "Download Unicode data files, IANA tables, and other required reference sources"
-                       :task download/-main}
+                       :task (clojure "-M -m download")}
          extract      {:doc     "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
                        :depends [download]
-                       :task    extract/-main}
+                       :task    (clojure "-M -m extract")}
          changes      {:doc  "Generate PRECIS change tables and verification data using RFC 8264 algorithm"
-                       :task changes/-main}
+                       :task (clojure "-M -m changes")}
          verify       {:doc  "Verify generated tables match extracted reference datasets"
-                       :task verify/-main}
+                       :task (clojure "-M -m verify")}
          report       {:doc  "Generate analysis report of PRECIS property changes across Unicode versions"
-                       :task report/-main}
+                       :task (clojure "-M -m report")}
          codepoint    {:doc  "Analyze and diagnose PRECIS classification for a specific codepoint across Unicode versions"
-                       :task codepoint/-main}
+                       :task (clojure "-M -m codepoint")}
          createtables {:doc  "Generate pristine PRECIS datasets for specified Unicode versions"
-                       :task createtables/-main}
-         #_#_packer       {:doc  "Generate binary lookup files for PRECIS derived property values (Clojure)"
-                           :task packer_task/-main-clj}
-         #_#_packer.py    {:doc  "Generate binary lookup files for PRECIS derived property values (Python)"
-                           :task packer_task/-main-py}
+                       :task (clojure "-M -m createtables")}
+         #_#_packer   {:doc  "Generate binary lookup files for PRECIS derived property values (Clojure)"
+                       :task (clojure "-M -m packer_task")}
+         #_#_packer.py {:doc  "Generate binary lookup files for PRECIS derived property values (Python)"
+                        :task (shell "python scripts/packer_task.py")}
          clean        {:doc  "Remove all generated directories (reference/, tables/)"
                        :task (do
                                (fs/delete-tree "reference")
