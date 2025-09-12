@@ -2,6 +2,7 @@
 (ns createtables
   (:require
    [clojure.java.io :as io]
+   [clojure.set :as set]
    [clojure.string :as str]
    [common :as common :refer [all-codepoints]]))
 
@@ -30,42 +31,23 @@
       {:unicode-data  (common/parse-unicode-data unicode-data-file)
        :derived-props (common/parse-derived-core-properties derived-props-file)})))
 
-(defn compute-all-precis-properties
-  "Compute PRECIS properties for all codepoints efficiently using unified function"
-  [version unicode-data derived-props]
-  (println (format "Computing PRECIS properties for %,d codepoints..." (count all-codepoints)))
-
-  ;; Use transient for efficiency during bulk construction
-  (loop [result    (transient {})
-         remaining all-codepoints
-         count     0]
-    (if (empty? remaining)
-      (persistent! result)
-      (let [cp   (first remaining)
-            ;; Use unified derive-precis-property function with version awareness
-            prop (common/derive-precis-property unicode-data derived-props cp)]
-        (recur (assoc! result cp prop)
-               (rest remaining)
-               (inc count))))))
-
 (defn determine-rules
   "Determine PRECIS rules that apply to a codepoint based on RFC 8264 Section 9"
   [unicode-data derived-props cp]
-  (let [assigned? (contains? unicode-data cp)]
-    (cond
-      (common/unassigned? unicode-data cp)          "J"
-      (common/ascii7? cp)                           "K"
-      (common/join-control? cp)                     "H"
-      (common/old-hangul-jamo? cp)                  "I"
-      (common/precis-ignorable? derived-props cp)   "M"
-      (common/control? unicode-data cp)             "L"
-      (common/has-compat? cp)                       "F"
-      (common/letter-digits? unicode-data cp)       "A"
-      (common/other-letter-digits? unicode-data cp) "B"
-      (common/spaces? unicode-data cp)              "N"
-      (common/symbols? unicode-data cp)             "O"
-      (common/punctuation? unicode-data cp)         "P"
-      :else                                         "")))
+  (cond
+    (common/unassigned? unicode-data cp)          "J"
+    (common/ascii7? cp)                           "K"
+    (common/join-control? cp)                     "H"
+    (common/old-hangul-jamo? cp)                  "I"
+    (common/precis-ignorable? derived-props cp)   "M"
+    (common/control? unicode-data cp)             "L"
+    (common/has-compat? cp)                       "F"
+    (common/letter-digits? unicode-data cp)       "A"
+    (common/other-letter-digits? unicode-data cp) "B"
+    (common/spaces? unicode-data cp)              "N"
+    (common/symbols? unicode-data cp)             "O"
+    (common/punctuation? unicode-data cp)         "P"
+    :else                                         ""))
 
 (defn write-allcodepoints-txt
   "Write allcodepoints.txt format: <codepoint>;<property>;<rules>;<name>"
@@ -75,9 +57,9 @@
 
     (with-open [writer (io/writer output-file)]
       (doseq [cp all-codepoints]
-        (let [prop  (get properties cp :unassigned)
-              rules (determine-rules unicode-data derived-props cp)
-              name  (common/get-character-name unicode-data cp)]
+        (let [[prop _reason] (nth properties cp [:unassigned nil])
+              rules          (determine-rules unicode-data derived-props cp)
+              name           (common/get-character-name unicode-data cp)]
           (.write writer (format "%04X;%s;%s;%s\n"
                                  cp (common/precis-properties prop) rules name)))))))
 
@@ -109,6 +91,16 @@
   [scripts-data cp]
   (get scripts-data cp "Common"))
 
+(defn xml-escape
+  "Escape text for XML with optional quote escaping"
+  ([text] (xml-escape text false))
+  ([text escape-quotes?]
+   (cond-> text
+     true           (str/replace "&" "&amp;")
+     true           (str/replace "<" "&lt;")
+     true           (str/replace ">" "&gt;")
+     escape-quotes? (str/replace "\"" "&quot;"))))
+
 (defn html-escape-name
   "Escape character name for HTML display, using <control> for control characters"
   [unicode-data cp]
@@ -116,19 +108,16 @@
         display-name (if (= (get-in unicode-data [cp :name]) "<control>")
                        "<control>"
                        raw-name)]
-    (-> display-name
-        (str/replace "&" "&amp;")
-        (str/replace "<" "&lt;")
-        (str/replace ">" "&gt;"))))
+    (xml-escape display-name)))
 
 (defn write-html-row
   "Write a single HTML table row for a codepoint"
   [writer unicode-data derived-props properties cp]
-  (let [prop         (get properties cp :unassigned)
-        rules        (determine-rules unicode-data derived-props cp)
-        gc           (get-in unicode-data [cp :general-category] "Cn")
-        name         (html-escape-name unicode-data cp)
-        char-display (format "&#x%04X;" cp)]
+  (let [[prop _reason] (nth properties cp [:unassigned nil])
+        rules          (determine-rules unicode-data derived-props cp)
+        gc             (get-in unicode-data [cp :general-category] "Cn")
+        name           (html-escape-name unicode-data cp)
+        char-display   (format "&#x%04X;" cp)]
     (.write writer (format "<TR><TD>U+%04X</TD><TD>%s</TD><TD>%s</TD><TD>%s</TD><TD>%s</TD><TD>%s</TD></TR>\n\n"
                            cp char-display (common/precis-properties prop) rules gc name))))
 
@@ -175,16 +164,6 @@
         (write-html-group writer gc codepoints unicode-data derived-props properties))
       (.write writer "</BODY></HTML>\n"))))
 
-(defn xml-escape
-  "Escape text for XML with optional quote escaping"
-  ([text] (xml-escape text false))
-  ([text escape-quotes?]
-   (cond-> text
-     true           (str/replace "&" "&amp;")
-     true           (str/replace "<" "&lt;")
-     true           (str/replace ">" "&gt;")
-     escape-quotes? (str/replace "\"" "&quot;"))))
-
 (defn format-range
   "Format codepoint range with specified separator"
   [start end separator]
@@ -203,13 +182,13 @@
   "Write UCD-style range notation format with XML wrapper elements"
   [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/xmlrfc.xml")
-        ranges      (common/compress-ranges properties)]
+        ranges      (common/compress-ranges-vec properties :with-reason? false)]
     (write-with-progress output-file "  Writing xmlrfc.xml (%,d ranges)" (count ranges)
                          (fn [writer]
                            (.write writer "<section title=\"Codepoints in Unicode Character Database (UCD) format\">\n")
                            (.write writer "<figure><artwork>\n")
 
-                           (doseq [[start end prop] ranges]
+                           (doseq [[start end [prop _]] ranges]
                              (let [range-str (format-range start end "..")
                                    comment   (xml-escape (common/ucd-range-description unicode-data start end))
                                    line      (format "%-12s; %-11s # %s" range-str (common/precis-properties prop) comment)]
@@ -221,13 +200,13 @@
   "Write IANA XML registry format"
   [output-dir _version unicode-data properties]
   (let [output-file (str output-dir "/idnabis-tables.xml")
-        ranges      (common/compress-ranges properties)]
+        ranges      (common/compress-ranges-vec properties :with-reason? false)]
     (write-with-progress output-file "  Writing idnabis-tables.xml (%,d records)" (count ranges)
                          (fn [writer]
                            (.write writer "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
                            (.write writer "<registry xmlns=\"http://www.iana.org/assignments\" id=\"precis-tables\">\n")
 
-                           (doseq [[start end prop] ranges]
+                           (doseq [[start end [prop _]] ranges]
                              (let [codepoint-str (format-range start end "-")
                                    description   (xml-escape (common/iana-range-description unicode-data start end) true)]
                                (.write writer "  <record>")
@@ -238,67 +217,63 @@
 
                            (.write writer "</registry>\n")))))
 
-(defn generate-for-version
-  "Generate all output formats for a specific Unicode version"
+(defn build-version-data
+  "Build Unicode data and PRECIS properties for a single version (for parallel processing)"
   [version]
-  (println (format "Generating PRECIS tables for Unicode %s..." version))
+  (let [{:keys [unicode-data derived-props]} (load-unicode-data version)
+        properties                           (common/build-props-vector unicode-data derived-props)]
+    [version {:unicode-data  unicode-data
+              :derived-props derived-props
+              :properties    properties
+              :version       version}]))
 
-  (let [output-dir                           (str output-base-path "/" version)
-        {:keys [unicode-data derived-props]} (load-unicode-data version)
-        properties                           (compute-all-precis-properties version unicode-data derived-props)]
+(defn build-all-version-data
+  "Build Unicode data and PRECIS properties for all versions in parallel"
+  [versions]
+  (println (format "Generating PRECIS derived property values for %d Unicode versions: %s" (count versions) (str/join ", " versions)))
+  (->> versions
+       (pmap build-version-data)
+       (into {})))
 
+(defn generate-for-version
+  "Generate all output formats for a specific Unicode version using pre-loaded data"
+  [{:keys [version unicode-data derived-props properties]}]
+  (println (format "Generating tables for Unicode %s..." version))
+
+  (let [output-dir (str output-base-path "/" version)]
     (.mkdirs (io/file output-dir))
+    (doseq [task [(future (write-allcodepoints-txt output-dir version unicode-data derived-props properties))
+                  (future (write-byscript-html output-dir version unicode-data derived-props properties))
+                  (future (write-bygc-html output-dir version unicode-data derived-props properties))
+                  (future (write-xmlrfc-xml output-dir version unicode-data properties))
+                  (future (write-iana-xml output-dir version unicode-data properties))
+                  (future (common/write-python-txt output-dir properties version))]]
+      @task)
+    (common/write-iana-csv (str output-dir "/iana.csv") unicode-data properties)))
 
-    (write-allcodepoints-txt output-dir version unicode-data derived-props properties)
-    (write-byscript-html output-dir version unicode-data derived-props properties)
-    (write-bygc-html output-dir version unicode-data derived-props properties)
-    (write-xmlrfc-xml output-dir version unicode-data properties)
-    (write-iana-xml output-dir version unicode-data properties)
-    (common/write-iana-csv (str output-dir "/iana.csv") unicode-data properties)
-
-    (println (format "Generated 6 files for Unicode %s in %s" version output-dir))))
-
-(defn get-available-versions
-  "Get list of available Unicode versions from data directory"
-  []
-  (let [data-dir (io/file unicode-base-path)]
-    (if (.exists data-dir)
-      (->> (.listFiles data-dir)
-           (filter #(.isDirectory %))
-           (map #(.getName %))
-           (filter #(re-matches #"\d+\.\d+\.\d+" %))
-           sort
-           vec)
-      [])))
+(defn match-versions
+  "Match requested versions against available versions"
+  [available-versions args]
+  (if (or (empty? args) (= (first args) "all"))
+    available-versions
+    (sort common/version-compare
+          (into [] (set/intersection (set available-versions) (set args))))))
 
 (defn -main
   "Main entry point for createtables script"
   [& args]
   (try
-    (let [requested-versions (if (empty? args)
-                               (get-available-versions)
-                               (if (= (first args) "all")
-                                 (get-available-versions)
-                                 (vec args)))
-          available          (set (get-available-versions))
-          valid-versions     (filter available requested-versions)
-          invalid-versions   (remove available requested-versions)]
+    (let [available-versions (common/discover-unicode-versions unicode-base-path)
+          version-subset     (match-versions available-versions args)]
 
-      ;; Report invalid versions
-      (when (seq invalid-versions)
-        (doseq [version invalid-versions]
-          (println (format "Warning: Unicode data for version %s not found, skipping" version))))
-
-      ;; Generate for valid versions
-      (if (empty? valid-versions)
+      (if (empty? version-subset)
         (println "No valid Unicode versions found. Run 'bb download' first.")
-        (do
-          (println (format "Generating PRECIS tables for %d Unicode versions: %s"
-                           (count valid-versions) (str/join ", " valid-versions)))
-          (doseq [version valid-versions]
-            (generate-for-version version))
+        (let [all-data (build-all-version-data version-subset)]
+          (doseq [version-data (vals all-data)]
+            (generate-for-version version-data))
+
           (println (format "Complete! Generated tables for %d versions in %s/"
-                           (count valid-versions) output-base-path)))))
+                           (count version-subset) output-base-path)))))
 
     (catch Exception e
       (println (format "Error: %s" (.getMessage e)))

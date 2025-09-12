@@ -6,19 +6,6 @@
    [clojure.string :as str]
    [common :as common]))
 
-(def unicode-base-path "data")
-(def output-base-path "reference/tables-generated")
-
-(defn format-comment
-  "Format comment for codepoint range, following RFC 72-character line limit"
-  [unicode-data start end]
-  (if (= start end)
-    (common/get-character-name unicode-data start)
-    (let [start-name (common/get-character-name unicode-data start)
-          end-name   (common/get-character-name unicode-data end)
-          combined   (str start-name ".." end-name)]
-      combined)))
-
 (defn write-table-file
   "Write an ietf rfc table file
 
@@ -73,64 +60,42 @@
         to-props                   (get-in all-props [to-version :props])
         to-unicode                 (get-in all-props [to-version :unicode-data])
         [assigned existing-change] (change-table from-props to-props)
-        output-file                (str output-base-path "/changes-" from-version "-" to-version)]
-    (.mkdirs (io/file output-base-path))
+        output-file                (str common/generated-dir "/changes-" from-version "-" to-version)]
+    (.mkdirs (io/file common/generated-dir))
     (when (some some? assigned)
       (write-table-file (str output-file "-from-unassigned.txt") to-unicode assigned))
     (when (some some? existing-change)
       (let [suffix "-property-changes"]
         (write-table-file (str output-file suffix ".txt") to-unicode existing-change)))))
 
-(defn build-version-properties [version]
-  (let [unicode-dir   (str unicode-base-path "/" version)
-        unicode-data  (common/parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
-        derived-props (common/parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
-        props-vec     (common/build-props-vector unicode-data derived-props)]
-    [version {:props props-vec :unicode-data unicode-data :version version}]))
-
 (defn build-all-version-properties
   "Build PRECIS properties for all discovered Unicode versions (single pass per version)"
   [versions]
   (println (format "Deriving PRECIS property values for unicode %s in parallel" (str/join ", " versions)))
   (->> versions
-       (pmap build-version-properties)
+       (pmap common/build-version-properties)
        (into {})))
-
-(defn write-python-txt
-  [props version]
-  (let [output-file (str output-base-path "/" (common/python-filename-format version))]
-    (println "  Writing " output-file)
-    (.mkdirs (io/file output-base-path))
-    (let [ranges (common/compress-ranges-vec props :with-reason? true)]
-      (with-open [writer (io/writer output-file)]
-        (doseq [[start end prop-tuple] ranges]
-          (let [[prop reason] prop-tuple
-                range-str     (format "%04X-%04X" start end)
-                prop-str      (-> prop name str/upper-case (str/replace #"-" "_"))
-                reason-str    (-> reason name (str/replace #"-" "_"))
-                line          (format "%s %s/%s" range-str prop-str reason-str)]
-            (.write writer (str line "\n"))))))))
 
 (defn write-python-txt-all-versions
   "Generate Python txt files for all Unicode versions"
   [all-props]
   (println "Generating Python txt files for " (keys all-props))
   (doseq [{:keys [version props]} (vals all-props)]
-    (write-python-txt props version)))
+    (common/write-python-txt common/generated-dir props version)))
 
 (defn write-iana-6.3-edn
   "Save complete PRECIS mappings to file for verification"
   [mappings]
-  (let [output-file (str output-base-path "/precis-mappings-6.3.0.edn")]
-    (.mkdirs (io/file output-base-path))
+  (let [output-file (str common/generated-dir "/precis-mappings-6.3.0.edn")]
+    (.mkdirs (io/file common/generated-dir))
     (spit output-file (pr-str mappings))))
 
 (defn write-iana-6.3-csv
   "Generate IANA-compatible CSV output format matching exact IANA formatting"
   [mappings unicode-data]
-  (let [output-file (str output-base-path "/precis-tables-6.3.0.csv")]
+  (let [output-file (str common/generated-dir "/precis-tables-6.3.0.csv")]
     (println (format "Generating IANA-compatible CSV: %s" output-file))
-    (.mkdirs (io/file output-base-path))
+    (.mkdirs (io/file common/generated-dir))
     (common/write-iana-csv output-file unicode-data mappings)))
 
 (defn generate-iana-outputs
@@ -150,7 +115,7 @@
      (map (fn [[from to]]
             (generate-change-table all-props from to))
           (partition 2 1 versions)))
-    (println "Done! Check" output-base-path "for generated tables.")))
+    (println "Done! Check" common/generated-dir "for generated tables.")))
 
 (defn match-versions
   [unicode-versions args]
@@ -159,7 +124,7 @@
     unicode-versions))
 
 (defn -main [& args]
-  (let [unicode-versions (common/discover-unicode-versions unicode-base-path)
+  (let [unicode-versions (common/discover-unicode-versions common/unicode-base-path)
         version-subset   (match-versions unicode-versions args)]
     (if (seq version-subset)
       (let [all-props (build-all-version-properties version-subset)]
@@ -169,7 +134,7 @@
           (println "Cannot generate change tables when only one version is provided")
           (generate-change-tables all-props version-subset))
         (println "All outputs generated! Run: bb verify"))
-      (println "No Unicode versions found in" unicode-base-path))))
+      (println "No Unicode versions found in" common/unicode-base-path))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (-main))

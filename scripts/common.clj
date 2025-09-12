@@ -16,6 +16,7 @@
    :contextj   "CONTEXTJ"
    :contexto   "CONTEXTO"})
 
+(def unicode-base-path "data")
 (def extracted-dir "reference/tables-extracted")
 (def generated-dir "reference/tables-generated")
 
@@ -78,8 +79,7 @@
   "Compress consecutive codepoints with same property into ranges
 
   Input: map of codepoints -> [derived-property-value reason]
-  Output: vector of [start end [derived-property-value reason]]
-  "
+  Output: vector of [start end [derived-property-value reason]]"
   [codepoint-props & {:keys [with-reason?]}]
   (let [sorted-cps (sort (keys codepoint-props))]
     (loop [ranges        []
@@ -131,6 +131,15 @@
   "Check if version v1 is less than v2"
   [v1 v2]
   (< (version-compare v1 v2) 0))
+
+(defn version-to-short-format
+  "Convert version from X.Y.Z format to X.Y format for filename generation"
+  [version]
+  (let [parts (str/split version #"\.")]
+    (str (first parts) "." (second parts))))
+
+(defn python-filename-format [version]
+  (str "derived-props-" (version-to-short-format version) ".txt"))
 
 (defn parse-unicode-data
   "Parse UnicodeData.txt file into a map of codepoint -> properties"
@@ -355,6 +364,13 @@
                (assoc! v cp (common/derive-precis-property unicode-data derived-props cp)))
         (persistent! v)))))
 
+(defn build-version-properties [version]
+  (let [unicode-dir   (str unicode-base-path "/" version)
+        unicode-data  (parse-unicode-data (str unicode-dir "/UnicodeData.txt"))
+        derived-props (parse-derived-core-properties (str unicode-dir "/DerivedCoreProperties.txt"))
+        props-vec     (build-props-vector unicode-data derived-props)]
+    [version {:props props-vec :unicode-data unicode-data :version version}]))
+
 (defn parse-codepoint-range-iana
   "Parse codepoint string, handling both ranges (0000-001F) and single points (0020)."
   [codepoint-str]
@@ -564,6 +580,20 @@
                                  (if (str/includes? description ",")
                                    (format "\"%s\"" description)
                                    description))))))))
+(defn write-python-txt
+  [output-dir props version]
+  (let [output-file (str output-dir "/" (python-filename-format version))]
+    (println "  Writing " (python-filename-format version))
+    (.mkdirs (io/file generated-dir))
+    (let [ranges (compress-ranges-vec props :with-reason? true)]
+      (with-open [writer (io/writer output-file)]
+        (doseq [[start end prop-tuple] ranges]
+          (let [[prop reason] prop-tuple
+                range-str     (format "%04X-%04X" start end)
+                prop-str      (-> prop name str/upper-case (str/replace #"-" "_"))
+                reason-str    (-> reason name (str/replace #"-" "_"))
+                line          (format "%s %s/%s" range-str prop-str reason-str)]
+            (.write writer (str line "\n"))))))))
 
 (defn latest-unicode-version
   "Get the latest Unicode version from unicode.org by parsing the content of the latest page"
@@ -590,12 +620,3 @@
          (filter #(re-matches #"\d+\.\d+\.\d+" %))
          (sort version-compare)
          vec)))
-
-(defn version-to-short-format
-  "Convert version from X.Y.Z format to X.Y format for filename generation"
-  [version]
-  (let [parts (str/split version #"\.")]
-    (str (first parts) "." (second parts))))
-
-(defn python-filename-format [version]
-  (str "derived-props-" (version-to-short-format version) ".txt"))
