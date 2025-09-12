@@ -24,74 +24,19 @@
   (let [cp           (common/parse-hex cp-hex)
         version-data (load-unicode-data-for-versions versions cp)]
 
-    (printf "=== CODEPOINT U+%s (%d) ===\n" cp-hex cp)
-    (let [first-version (first versions)
-          first-entry   (get-in version-data [first-version :entry])]
-      (if first-entry
-        (do
-          (println "Name            :" (:name first-entry))
-          (println "General Category:" (:general-category first-entry))
-          (println "Decomposition   :" (or (:decomposition first-entry) "(none)")))
-        (println "Character may be unassigned in some versions")))
-
-    (let [all-step-functions [{:step "1 exceptions-value" :fn #(common/exceptions-value cp) :context-free true}
-                              {:step "2 assigned?" :fn (fn [data _] (contains? (:unicode-data data) cp)) :context-free false}
-                              {:step "3 ascii7?" :fn #(common/ascii7? cp) :context-free true}
-                              {:step "4 join-control?" :fn #(common/join-control? cp) :context-free true}
-                              {:step "5 old-hangul-jamo?" :fn #(common/old-hangul-jamo? cp) :context-free true}
-                              {:step "6 precis-ignorable?" :fn (fn [data _] (common/precis-ignorable? (:derived-props data) cp)) :context-free false}
-                              {:step "7 control?" :fn (fn [data _] (common/control? (:unicode-data data) cp)) :context-free false}
-                              {:step "8 has-compat?" :fn (fn [data _] (common/has-compat? (:unicode-data data) cp)) :context-free false}
-                              {:step "9 letter-digits?" :fn (fn [data _] (common/letter-digits? (:unicode-data data) cp)) :context-free false}
-                              {:step "10 other-letter-digits?" :fn (fn [data _] (common/other-letter-digits? (:unicode-data data) cp)) :context-free false}
-                              {:step "11 spaces?" :fn (fn [data _] (common/spaces? (:unicode-data data) cp)) :context-free false}
-                              {:step "12 symbols?" :fn (fn [data _] (common/symbols? (:unicode-data data) cp)) :context-free false}
-                              {:step "13 punctuation?" :fn (fn [data _] (common/punctuation? (:unicode-data data) cp)) :context-free false}]
-
-          ;; Helper function to create matrix data
-          create-matrix (fn [step-functions]
-                          (for [version versions]
-                            (let [data      (get version-data version)
-                                  assigned? (contains? (:unicode-data data) cp)]
-                              (merge {:version version}
-                                     (if assigned?
-                                       (into {} (map (fn [{:keys [step fn context-free]}]
-                                                       (let [result (if context-free (fn) (fn data version))]
-                                                         [step result]))
-                                                     step-functions))
-                                       (into {} (map (fn [{:keys [step]}]
-                                                       [step (cond
-                                                               (= step "1 exceptions-value") (common/exceptions-value cp)
-                                                               (= step "2 assigned?")        false
-                                                               :else                         "N/A")])
-                                                     step-functions)))))))
-
-          ;; Helper function to print matrix
-          print-matrix (fn [title step-functions]
-                         (println (str "\n--- " title " ------"))
-                         (let [matrix-data (create-matrix step-functions)]
-                           (pprint/print-table (cons :version (map :step step-functions)) matrix-data)))]
-
-      ;; Print both matrices
-      (print-matrix "PRECIS ALGORITHM STEPS MATRIX (Steps 1-6)" (take 6 all-step-functions))
-      (print-matrix "PRECIS ALGORITHM STEPS MATRIX (Steps 7-13)" (drop 6 all-step-functions)))
-
-    (println "\n--- PRECIS DERIVED PROPERTY ACROSS VERSIONS -----")
-    (let [iana-exceptions (common/load-iana-exceptions-cached)]
-      (doseq [version versions]
-        (let [data             (get version-data version)
-              unicode-data     (:unicode-data data)
-              derived-props    (:derived-props data)
-              entry            (get unicode-data cp)
-              general-category (if entry (:general-category entry) "unassigned")
-              result           (common/derive-precis-property unicode-data derived-props cp version)
-              iana-result      (if (and (= version "6.3.0") (contains? unicode-data cp) (contains? iana-exceptions cp))
-                                 (get iana-exceptions cp)
-                                 nil)]
-          (printf "Unicode %-6s: %-12s (General Category: %s)" version result general-category)
-          (when iana-result
-            (printf " [IANA override: %s]" iana-result))
-          (println))))))
+    (println "━━━ PRECIS DERIVED PROPERTY ACROSS VERSIONS ━━━")
+    (let [table-data (for [version versions]
+                       (let [data             (get version-data version)
+                             unicode-data     (:unicode-data data)
+                             derived-props    (:derived-props data)
+                             entry            (get unicode-data cp)
+                             general-category (if entry (:general-category entry) "unassigned")
+                             [property reason] (common/derive-precis-property unicode-data derived-props cp)]
+                         {:version version
+                          :property (name property)
+                          :reason (name reason)
+                          :general-category general-category}))]
+      (pprint/print-table [:version :property :reason :general-category] table-data))))
 
 (defn -main [& args]
   (let [parsed-args (loop [remaining args

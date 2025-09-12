@@ -16,11 +16,8 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [Reference Standards](#reference-standards)
     - [Generated Outputs](#generated-outputs)
   - [Findings](#findings)
-    - [1. Documented Discrepancies](#1-documented-discrepancies)
-      - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
-      - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
-    - [2. Undocumented Discrepancies](#2-undocumented-discrepancies)
-      - [U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0](#u180f-mongolian-free-variation-selector-four---unicode-1300--1400)
+    - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
+    - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
     - [Implementation Notes](#implementation-notes)
   - [Overview of Changes Between Unicode 6.3.0 and 17.0.0](#overview-of-changes-between-unicode-630-and-1700)
     - [Changes between Unicode 6.3.0 and 7.0.0](#changes-between-unicode-630-and-700)
@@ -36,6 +33,15 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [Changes between Unicode 16.0.0 and 17.0.0](#changes-between-unicode-1600-and-1700)
   - [Usage](#usage)
   - [Project Structure](#project-structure)
+  - [Generated Dataset Formats](#generated-dataset-formats)
+    - [Derived Property Values](#derived-property-values)
+    - [Output Files](#output-files)
+      - [`allcodepoints.txt`](#allcodepointstxt)
+    - [`derived-props-M.m.txt`](#derived-props-mmtxt)
+      - [`byscript.html` and `bygc.html`](#byscripthtml-and-bygchtml)
+      - [`xmlrfc.xml`](#xmlrfcxml)
+      - [`idnabis-tables.xml`](#idnabis-tablesxml)
+      - [`iana.csv`](#ianacsv)
   - [References](#references)
 
 <!-- markdown-toc end -->
@@ -116,18 +122,10 @@ The generated datasets can be used to support:
 ## Findings
 
 During implementation, we discovered several codepoints that require special handling to match the reference data from [[NEMOTO-DRAFT]](#NEMOTO-DRAFT). 
-These fall into two categories: 
 
-1. Documented  discrepancies: These codepoints are explicitly discussed in I-D draft-nemoto-precis-unicode14-00
-1. Undocumented discrepancies: These codepoints represent cases where our algorithmic derivation differs from the reference tables without explanation in the I-D
-
-### 1. Documented Discrepancies
-
-#### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
+### U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0
 
 U+111C9 (SHARADA SANDHI MARK) was added in Unicode 8.0.0 and had the PRECIS Derived Property Value of ID_DIS or FREE_PVAL.
-
-**Anomaly**
 
 However in Unicode version 11.0.0 the Unicode properties for U+111C9 were changed as documented in Unicode proposal L2/17-247 [[L2/17-247]](#L2-17-247):
 the General Category was changed from Po (Other_Punctuation) to Mn (Nonspacing_Mark), and the Bidi property was changed from L (Left to Right) to NSM (Nonspacing Mark).
@@ -138,18 +136,19 @@ The IdentifierClass includes the LetterDigits (A) category as defined in RFC 826
 The LetterDigits category explicitly includes Mn (Nonspacing_Mark) characters.
 When U+111C9 changed from Po to Mn, it became eligible for inclusion in IdentifierClass, changing its derived property value from ID_DIS or FREE_PVAL to PVALID.
 
+This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
+
+**Anomaly**
+
+I-D draft-nemoto-precis-unicode14-00 includes this codepoint in two tables, once in the "Changes from derived propery value ID_DIS or FREE_PVAL to PVALID" section, and again in the "Changes from derived propery value UNASSIGNED to either PVALID.."
+
 **Resolution**
 
-From Unicode 8.0.0 through 10.0.0 U+111C9 was not allowed in the IdentifierClass.
-Starting with Unicode 11 this changed and U+111C9 is allowed (PVALID).
-
-This change from disallowed to allowed is not a backwards incompatible change for strings already stored and processed by PRECIS implementations.
+The inclusion of U+11C9 by T. Nemoto  in the second table is is an error.
 
 ---
 
-#### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
-
-**Anomaly**
+### U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  
 
 In Unicode 12.0.0 the Unicode properties for U+166D were changed as documented in Unicode Technical Committee Meeting 157 decision [157-C16] [[L2/18-272]](#L2-18-272):
 the General Category was changed from Po (Other_Punctuation) to So (Other_Symbol), and the Terminal_Punctuation property was changed from Yes to No.
@@ -158,66 +157,68 @@ I-D draft-nemoto-precis-unicode14-00 correctly notes that this property change "
 
 The change altered the basis for calculating the derived property value from Punctuation (P) in RFC 8264 Section 9.16 to Symbols (O) in RFC 8264 Section 9.15, but both categories result in ID_DIS or FREE_PVAL.
 
-Despite the theoretical equivalence, the reference tables (tables-extracted/changes-11.0.0-12.0.0-from-unassigned.txt) list this codepoint as transitioning from UNASSIGNED to FREE_PVAL, which represents a discrepancy between the documented impact assessment and the reference implementation data.
-
-**Resolution**
-
-Force inclusion as an UNASSIGNED→FREE_PVAL transition to match reference tables (possible documentation inconsistency in reference implementation).
-
-This discrepancy has no practical impact on PRECIS implementations since the derived property value remains the same.
-
----
-
-### 2. Undocumented Discrepancies
-
-
-#### U+180F (MONGOLIAN FREE VARIATION SELECTOR FOUR) - Unicode 13.0.0 → 14.0.0
-
-U+180F, MONGOLIAN FREE VARIATION SELECTOR FOUR (FVS4) is assigned in Unicode 14.0.0 with `General_Category=Mn` (Nonspacing Mark).
-
 **Anomaly**
 
-Following RFC 8264 Section 8's algorithm, `Mn` is included in [[LetterDigits (RFC 8264 Section 9.1)]](#RFC8264-SECTION91) which forwards to [[RFC 5892 2.1]](#RFC5892-SECTION21), which results in PVALID categorization.
-
-Yet I-D draft-nemoto-precis-unicode14-00 categorizes FVS4 as DISALLOWED.
-The I-D does not explain why this character should be DISALLOWED rather than the algorithmically derived PVALID.
-
-However the anomaly deepens when looking at codepoints U+180B-180D MONGOLIAN FREE VARIATION SELECTOR ONE through THREE (FVS1 - FVS3). 
-These codepoints are semantically similar to FVS4 and should also be algorithmically derived as PVALID, but they are listed in the IANA precis-tables-6.3.0 as DISALLOWED.
-It is not clear what rules or source material were considered in the construction of IANA precis-tables-6.3.0. Notably they do not exist in the Exceptions (F) category.
-A review of RFC 5892, its [[errata]](#RFC5892-ERRATA), and the update in [[RFC 8753]](#RFC8753) do not shed any light on the mystery.
-
+I-D draft-nemoto-precis-unicode14-00 includes this codepoint in the table "Changes from derived propery value UNASSIGNED to either PVALID..", but this codepoint was already assigned.
 
 **Resolution**
 
-Override the algorithmic derivation to force DISALLOWED
-
-The DISALLOWED resolution is supported by two key factors:
-
-1. Expert precedent: FVS1-3 are DISALLOWED in IANA precis-tables-6.3.0, establishing that these mongolian variation selectors require special exceptions
-2. Practical usage considerations, as the [[Unicode proposal for FVS4]](#FVS4-PROPOSAL) states it "would only be needed by pre-contemporary, historical texts," indicating this character is not intended for modern text input that would appear in PRECIS systems like usernames, identifiers, or passwords
-
-
-**Open Questions**
-
-1. Is the IANA precis-tables-6.3.0 registry normative with respect to RFC 8264?
-2. Why were codepoints U+180B-180D MONGOLIAN FREE VARIATION SELECTOR ONE through THREE (FVS1 - FVS3) categorized as DISALLOWED in IANA precis-tables-6.3.0?
-3. Do normative rules exist in any extant RFCs that would cover the overriding of FVS1-FVS4 as DISALLOWED?
-
----
+The inclusion of U+166D by T. Nemoto  in the "form unassigned" table is is an error, it should have been in a different table.
 
 ### Implementation Notes
 
-These special cases are handled in `scripts/common.clj` within the unified PRECIS derivation function.
-They are evaluated before the general change detection logic to ensure proper precedence. 
+The above findings can be seen by running the `bb verify` command
 
-The undocumented discrepancies may represent:
-- Errors in the reference implementation
-- Errors in our algorithmic implementation
-- Undocumented policy decisions in the PRECIS specification
-- Edge cases in the Unicode data interpretation
+```
+━━━ VALIDATE AGAINST IANA 6.3.0 REGISTRY ━━━
+Total codepoints checked: 1114112
+Matches: 1114112
+Mismatches: 0
+Accuracy: 100.00%
 
-Without further clarification from the specification authors, we have chosen to match the reference data exactly to ensure compatibility.
+Property distribution:
+  :contextj: 2
+  :contexto: 25
+  :disallowed: 140423
+  :free-pval: 10320
+  :pvalid: 98999
+  :unassigned: 864343
+
+PASSED
+
+━━━ VALIDATE AGAINST PYTHON DERIVED-PROPS ━━━
+Extracted Python files: 10
+Generated Python files: 12
+Common Python files: 10
+Files beyond Python coverage (ignored): 1
+
+PASSED
+
+━━━ VALIDATE AGAINST draft-nemoto-precis-unicode14-00 CHANGE TABLES ━━━
+Extracted files: 9
+Generated files: 12
+Common files: 9
+Files beyond draft coverage (ignored): 3
+File differences summary
+
+▶ changes-10.0.0-11.0.0-from-unassigned.txt
+  Lines removed from extracted: 1
+  Lines added in generated: 0
+
+  First differences (max 10 each):
+  Extracted (expected):
+    -111C9       ; PVALID      # SHARADA SANDHI MARK
+
+▶ changes-11.0.0-12.0.0-from-unassigned.txt
+  Lines removed from extracted: 1
+  Lines added in generated: 0
+
+  First differences (max 10 each):
+  Extracted (expected):
+    -166D        ; FREE_PVAL   # CANADIAN SYLLABICS CHI SIGN
+
+FAILED
+```
 
 
 <!-- START of REPORT.md embed -->
@@ -362,8 +363,6 @@ Code points that changed derived property value from other than UNASSIGNED: 0
 
 There are no changes made to Unicode between version 13.0.0 and 14.0.0 that impact PRECIS calculation of the derived property values.
 
-MONGOLIAN FREE VARIATION SELECTOR FOUR (U+180F) transitions from UNASSIGNED to DISALLOWED.
-
 ### Changes between Unicode 14.0.0 and 15.0.0
 
 Change in number of characters in each category:
@@ -505,6 +504,23 @@ Example:
 0042;ID_DIS;AB;LATIN CAPITAL LETTER B
 ```
 
+### `derived-props-M.m.txt`
+
+The format used by the python precis implementation [precis_i18n](https://github.com/byllyfish/precis_i18n).
+It is notable because it shows the corresponding Section 8 rule that determined the property value.
+
+Example:
+
+```
+0000-001F DISALLOWED/controls
+0020-0020 FREE_PVAL/spaces
+0021-007E PVALID/ascii7
+007F-009F DISALLOWED/controls
+00A0-00A0 FREE_PVAL/has_compat
+```
+
+
+
 #### `byscript.html` and `bygc.html`
 HTML tables with code points sorted by script or general category, containing:
 1. Codepoint in hex
@@ -543,11 +559,6 @@ All code points in CSV format that IANA uses:
 ```
 
 ## References
-
-<a id="FVS4-PROPOSAL">[FVS4-PROPOSAL]</a>  
-Anderson, D. (2020).  
-Mongolian Free Variation Selector Four.  
-Unicode Technical Committee Document L2/20-057. <https://www.unicode.org/L2/L2020/20057-mongolian-fvs4.pdf>
 
 <a id="IAB-UNICODE7">[IAB-UNICODE7]</a>  
 Internet Architecture Board (2015).  
