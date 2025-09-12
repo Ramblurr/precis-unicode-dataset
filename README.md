@@ -13,8 +13,6 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [The "hamza" problem ](#the-hamza-problem)
   - [Objective](#objective)
   - [Data Sources](#data-sources)
-    - [Reference Standards](#reference-standards)
-    - [Generated Outputs](#generated-outputs)
   - [Findings](#findings)
     - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
     - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
@@ -37,7 +35,7 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [Derived Property Values](#derived-property-values)
     - [Output Files](#output-files)
       - [`allcodepoints.txt`](#allcodepointstxt)
-    - [`derived-props-M.m.txt`](#derived-props-mmtxt)
+      - [`derived-props-M.m.txt`](#derived-props-mmtxt)
       - [`byscript.html` and `bygc.html`](#byscripthtml-and-bygchtml)
       - [`xmlrfc.xml`](#xmlrfcxml)
       - [`idnabis-tables.xml`](#idnabis-tablesxml)
@@ -108,16 +106,15 @@ The generated datasets can be used to support:
 
 ## Data Sources
 
-### Reference Standards
+As input data:
 
 - Unicode Character Database (UCD) [[UCD]](#UCD)
+
+As reference data sets for validation:
+
 - IANA precis-tables-6.3.0 [[IANA-PRECIS]](#IANA-PRECIS): Official baseline property classifications
 - T. Nemoto I-D draft-nemoto-precis-unicode14-00 [[NEMOTO-DRAFT]](#NEMOTO-DRAFT): Known-good change analysis for Unicode transitions
-
-### Generated Outputs
-- Complete property mappings for each Unicode version
-- Version-to-version change tables showing property transitions
-- Statistical summaries of character classification changes
+- The derived property datasets from precis_i18n, a python PRECIS implementation by B. Fisher (@byllyfish) [[PYTHON-PRECIS](#PYTHON-PRECIS)]
 
 ## Findings
 
@@ -504,9 +501,9 @@ Example:
 0042;ID_DIS;AB;LATIN CAPITAL LETTER B
 ```
 
-### `derived-props-M.m.txt`
+#### `derived-props-M.m.txt`
 
-The format used by the python precis implementation [precis_i18n](https://github.com/byllyfish/precis_i18n).
+The format used by the python precis implementation precis_i18n [[PYTHON-PRECIS](#PYTHON-PRECIS)].
 It is notable because it shows the corresponding Section 8 rule that determined the property value.
 
 Example:
@@ -632,3 +629,7 @@ The Unicode Consortium.
 Unicode Character Database.  
 <https://www.unicode.org/ucd/>
 
+<a id="PYTHON-PRECIS">[PYTHON-PRECIS]</a>  
+Fisher, F. (2025).  
+precis_i18n.  
+<https://github.com/byllyfish/precis_i18n>
