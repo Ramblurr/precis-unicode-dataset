@@ -13,6 +13,7 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [The "hamza" problem ](#the-hamza-problem)
   - [Objective](#objective)
   - [Data Sources](#data-sources)
+  - [Derived Data](#derived-data)
   - [Findings](#findings)
     - [U+111C9 (SHARADA SANDHI MARK) - Unicode 10.0.0 → 11.0.0](#u111c9-sharada-sandhi-mark---unicode-1000--1100)
     - [U+166D (CANADIAN SYLLABICS CHI SIGN) - Unicode 11.0.0 → 12.0.0  ](#u166d-canadian-syllabics-chi-sign---unicode-1100--1200)
@@ -31,15 +32,6 @@ The project includes complete tooling for PRECIS property derivation and change 
     - [Changes between Unicode 16.0.0 and 17.0.0](#changes-between-unicode-1600-and-1700)
   - [Usage](#usage)
   - [Project Structure](#project-structure)
-  - [Generated Dataset Formats](#generated-dataset-formats)
-    - [Derived Property Values](#derived-property-values)
-    - [Output Files](#output-files)
-      - [`allcodepoints.txt`](#allcodepointstxt)
-      - [`derived-props-M.m.txt`](#derived-props-mmtxt)
-      - [`byscript.html` and `bygc.html`](#byscripthtml-and-bygchtml)
-      - [`xmlrfc.xml`](#xmlrfcxml)
-      - [`idnabis-tables.xml`](#idnabis-tablesxml)
-      - [`iana.csv`](#ianacsv)
   - [References](#references)
 
 <!-- markdown-toc end -->
@@ -115,6 +107,13 @@ As reference data sets for validation:
 - IANA precis-tables-6.3.0 [[IANA-PRECIS]](#IANA-PRECIS): Official baseline property classifications
 - T. Nemoto I-D draft-nemoto-precis-unicode14-00 [[NEMOTO-DRAFT]](#NEMOTO-DRAFT): Known-good change analysis for Unicode transitions
 - The derived property datasets from precis_i18n, a python PRECIS implementation by B. Fisher (@byllyfish) [[PYTHON-PRECIS](#PYTHON-PRECIS)]
+
+
+## Derived Data
+
+The output of this project is a set of PRECIS derived property values for each version of Unicode in multiple formats. You can find them in `tables/`.
+
+See [./tables/README.md](./tables/README.md) for more information.
 
 ## Findings
 
@@ -468,92 +467,6 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
 - `tables/` - Unicode data files and generated PRECIS datasets
   - `[version]/` - Per-Unicode version (e.g., 6.3.0, 17.0.0)
     - allcodepoints.txt, byscript.html, bygc.html, xmlrfc.xml, idnabis-tables.xml, iana.csv
-
-## Generated Dataset Formats
-
-The PRECIS derived property values are generated for each Unicode version in multiple formats into the `tables/[version]/` dir
-
-### Derived Property Values
-
-Codepoints can have the following derived property values:
-
-- **PVALID**: The code point is allowed in any PRECIS string class
-- **ID_DIS or FREE_PVAL**: The code point is disallowed in the IdentifierClass but allowed in the FreeformClass
-- **DISALLOWED**: The code point is disallowed in all PRECIS string classes
-- **UNASSIGNED**: The code point is not assigned by Unicode Consortium and cannot be used in PRECIS
-- **CONTEXTJ**: The code point must be checked according to contextual rules for join controls
-- **CONTEXTO**: The code point must be checked according to contextual rules for other code points than join controls
-
-### Output Files
-
-#### `allcodepoints.txt`
-One line per codepoint with four semicolon-separated fields:
-1. Codepoint in hex
-2. Derived property value
-3. Rules in PRECIS that match
-4. Name of character
-
-Example:
-```
-003F;DISALLOWED;;QUESTION MARK
-0040;DISALLOWED;;COMMERCIAL AT
-0041;ID_DIS;AB;LATIN CAPITAL LETTER A
-0042;ID_DIS;AB;LATIN CAPITAL LETTER B
-```
-
-#### `derived-props-M.m.txt`
-
-The format used by the python precis implementation precis_i18n [[PYTHON-PRECIS](#PYTHON-PRECIS)].
-It is notable because it shows the corresponding Section 8 rule that determined the property value.
-
-Example:
-
-```
-0000-001F DISALLOWED/controls
-0020-0020 FREE_PVAL/spaces
-0021-007E PVALID/ascii7
-007F-009F DISALLOWED/controls
-00A0-00A0 FREE_PVAL/has_compat
-```
-
-
-
-#### `byscript.html` and `bygc.html`
-HTML tables with code points sorted by script or general category, containing:
-1. Codepoint in hex
-2. Character itself
-3. Derived property value
-4. Rules in PRECIS that match
-5. General Category (Gc) value
-6. Name of character
-
-#### `xmlrfc.xml`
-All code points in Unicode Character Database (UCD) format:
-```
-0000..002C  ; DISALLOWED  # <control>..COMMA
-002D        ; PVALID      # HYPHEN-MINUS
-002E..002F  ; DISALLOWED  # FULL STOP..SOLIDUS
-0030..0039  ; PVALID      # DIGIT ZERO..DIGIT NINE
-```
-
-#### `idnabis-tables.xml`
-All code points in the XML format IANA uses:
-```xml
-<record>
-  <codepoint>018C-018D</codepoint>
-  <property>PVALID</property>
-  <description>LATIN SMALL LETTER D WITH TOPBAR..LATIN SMALL LETTER TURNED DELTA</description>
-</record>
-```
-
-#### `iana.csv`
-All code points in CSV format that IANA uses:
-```
-0000-002C,DISALLOWED,NULL..COMMA
-002D,PVALID,HYPHEN-MINUS
-002E-002F,DISALLOWED,FULL STOP..SOLIDUS
-0030-0039,PVALID,DIGIT ZERO..DIGIT NINE
-```
 
 ## References
 

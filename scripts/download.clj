@@ -68,7 +68,8 @@
 (defn download-precis-python-refs
   "Download reference derived-props files from precis_i18n project"
   []
-  (let [base-url "https://raw.githubusercontent.com/byllyfish/precis_i18n/main/test/"
+  (let [branch "unicode17"
+        base-url (format "https://raw.githubusercontent.com/byllyfish/precis_i18n/%s/test/" branch)
         ref-dir  "reference/tables-extracted"
         files    (map common/python-filename-format unicode-versions)]
     (.mkdirs (io/file ref-dir))
@@ -212,10 +213,8 @@
     (download-versions versions)))
 
 (defn -main [& args]
+  (download-precis-python-refs)
   (ensure-reference-files)
-
-  (when (some #{"--python-refs"} args)
-    (download-precis-python-refs))
 
   (if (some #{"--new"} args)
     (handle-new-flag)

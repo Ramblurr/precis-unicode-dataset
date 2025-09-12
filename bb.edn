@@ -1,29 +1,36 @@
 {:paths ["scripts"]
  :deps  {}
- :tasks {:requires ([babashka.fs :as fs])
-         download  {:doc  "Download Unicode data files, IANA tables, and other required reference sources"
-                    :task download/-main}
-         extract   {:doc     "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
-                    :depends [download]
-                    :task    extract/-main}
-         changes   {:doc     "Generate PRECIS change tables and verification data using RFC 8264 algorithm"
-                    :task    changes/-main}
-         verify    {:doc  "Verify generated tables match extracted reference datasets"
-                    :task verify/-main}
-         report    {:doc  "Generate analysis report of PRECIS property changes across Unicode versions"
-                    :task report/-main}
-         codepoint {:doc  "Analyze and diagnose PRECIS classification for a specific codepoint across Unicode versions"
-                    :task codepoint/-main}
-         createtables {:doc "Generate pristine PRECIS datasets for specified Unicode versions"
+ :tasks {:requires    ([babashka.fs :as fs]
+                       [packer_task])
+         download     {:doc  "Download Unicode data files, IANA tables, and other required reference sources"
+                       :task download/-main}
+         extract      {:doc     "Extract reference datasets from T. Nemoto draft and IANA PRECIS tables"
+                       :depends [download]
+                       :task    extract/-main}
+         changes      {:doc  "Generate PRECIS change tables and verification data using RFC 8264 algorithm"
+                       :task changes/-main}
+         verify       {:doc  "Verify generated tables match extracted reference datasets"
+                       :task verify/-main}
+         report       {:doc  "Generate analysis report of PRECIS property changes across Unicode versions"
+                       :task report/-main}
+         codepoint    {:doc  "Analyze and diagnose PRECIS classification for a specific codepoint across Unicode versions"
+                       :task codepoint/-main}
+         createtables {:doc  "Generate pristine PRECIS datasets for specified Unicode versions"
                        :task createtables/-main}
-         clean     {:doc  "Remove all generated directories (reference/, tables/)"
-                    :task (do
-                            (fs/delete-tree "reference")
-                            (fs/delete-tree "tables"))}
-         distclean {:doc     "Remove all generated directories and downloaded Unicode data"
-                    :depends [clean]
-                    :task    (fs/delete-tree "data")}
-         fmt               (shell "cljfmt -v fix scripts")
-         lint              (if (seq *command-line-args*)
-                             (apply shell "clj-kondo" "--lint" *command-line-args*)
-                             (shell "clj-kondo" "--lint" "scripts"))}}
+         #_#_packer       {:doc  "Generate binary lookup files for PRECIS derived property values (Clojure)"
+                           :task packer_task/-main-clj}
+         #_#_packer.py    {:doc  "Generate binary lookup files for PRECIS derived property values (Python)"
+                           :task packer_task/-main-py}
+         clean        {:doc  "Remove all generated directories (reference/, tables/)"
+                       :task (do
+                               (fs/delete-tree "reference")
+                               (doseq [dir (fs/list-dir "tables")]
+                                 (when (fs/directory? dir)
+                                   (fs/delete-tree dir))))}
+         distclean    {:doc     "Remove all generated directories and downloaded Unicode data"
+                       :depends [clean]
+                       :task    (fs/delete-tree "data")}
+         fmt          (shell "cljfmt -v fix scripts")
+         lint         (if (seq *command-line-args*)
+                        (apply shell "clj-kondo" "--lint" *command-line-args*)
+                        (shell "clj-kondo" "--lint" "scripts"))}}
