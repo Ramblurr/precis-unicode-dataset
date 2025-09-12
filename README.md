@@ -411,7 +411,7 @@ There are no changes made to Unicode between version 16.0.0 and 17.0.0 that impa
 
 ## Usage
 
-1. Install [Babashka](https://github.com/babashka/babashka#installation)
+1. Install [Clojure](https://clojure.org/guides/install_clojure) and [Babashka](https://github.com/babashka/babashka#installation)
 
     ```
     $ bb tasks
