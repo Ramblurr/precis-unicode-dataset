@@ -23,14 +23,15 @@
   "Write an ietf rfc table file
 
   changes should be a map of codepoints -> [derived-property-value rule-reason]"
-  [filepath unicode-data changes]
+  [output-file unicode-data changes]
   (when (seq changes)
     (let [ranges (common/compress-ranges-map changes)]
-      (with-open [writer (io/writer filepath)]
+      (println "  Writing " output-file)
+      (with-open [writer (io/writer output-file)]
         (let [lines     (for [[start end [prop _reason]] ranges]
                           (let [range-str  (common/range-format [start end])
                                 prop-str   (get common/precis-properties prop "UNKNOWN")
-                                comment    (format-comment unicode-data start end)
+                                comment    (common/ucd-range-description unicode-data start end)
                                 ;; Build full line and truncate to exactly 72 characters
                                 full-line  (format "%-12s; %-11s # %s" range-str prop-str comment)
                                 final-line (if (<= (count full-line) 72)
@@ -72,15 +73,13 @@
         to-props                   (get-in all-props [to-version :props])
         to-unicode                 (get-in all-props [to-version :unicode-data])
         [assigned existing-change] (change-table from-props to-props)
-        base-filename              (str output-base-path "/changes-" from-version "-" to-version)]
+        output-file                (str output-base-path "/changes-" from-version "-" to-version)]
     (.mkdirs (io/file output-base-path))
     (when (some some? assigned)
-      (write-table-file (str base-filename "-from-unassigned.txt")
-                        to-unicode assigned))
+      (write-table-file (str output-file "-from-unassigned.txt") to-unicode assigned))
     (when (some some? existing-change)
       (let [suffix "-property-changes"]
-        (write-table-file (str base-filename suffix ".txt")
-                          to-unicode existing-change)))))
+        (write-table-file (str output-file suffix ".txt") to-unicode existing-change)))))
 
 (defn build-version-properties [version]
   (let [unicode-dir   (str unicode-base-path "/" version)
@@ -102,7 +101,7 @@
   (let [output-file (str output-base-path "/" (common/python-filename-format version))]
     (println "  Writing " output-file)
     (.mkdirs (io/file output-base-path))
-    (let [ranges (common/compress-ranges-vec props)]
+    (let [ranges (common/compress-ranges-vec props :with-reason? true)]
       (with-open [writer (io/writer output-file)]
         (doseq [[start end prop-tuple] ranges]
           (let [[prop reason] prop-tuple
@@ -149,7 +148,6 @@
     (println "Generating PRECIS Unicode change tables...")
     (dorun
      (map (fn [[from to]]
-            (println (format "Processing %s -> %s..." from to))
             (generate-change-table all-props from to))
           (partition 2 1 versions)))
     (println "Done! Check" output-base-path "for generated tables.")))

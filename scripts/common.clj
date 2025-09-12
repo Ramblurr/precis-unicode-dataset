@@ -50,7 +50,7 @@
   "Compress consecutive codepoints with same property into ranges
   Input: vector where index=codepoint, value=[derived-property-value reason]
   Output: vector of [start end [derived-property-value reason]]"
-  [props-vec & {:keys [with-reason?] :or {with-reason? true}}]
+  [props-vec & {:keys [with-reason?]}]
   (let [ranges-t (transient [])]
     (loop [current-start nil
            current-end   nil
@@ -80,7 +80,7 @@
   Input: map of codepoints -> [derived-property-value reason]
   Output: vector of [start end [derived-property-value reason]]
   "
-  [codepoint-props]
+  [codepoint-props & {:keys [with-reason?]}]
   (let [sorted-cps (sort (keys codepoint-props))]
     (loop [ranges        []
            current-start nil
@@ -91,10 +91,11 @@
         (if current-start
           (conj ranges [current-start current-end current-prop])
           ranges)
-        (let [cp         (first remaining)
-              prop-tuple (get codepoint-props cp)]
+        (let [cp          (first remaining)
+              prop-tuple  (get codepoint-props cp)
+              compare-val (if with-reason? prop-tuple (first prop-tuple))]
           (if (and current-start
-                   (= prop-tuple current-prop)
+                   (= compare-val (if with-reason? current-prop (first current-prop)))
                    (= cp (inc current-end)))
             ;; Extend current range
             (recur ranges current-start cp prop-tuple (rest remaining))
@@ -259,14 +260,19 @@
         nfkc (java.text.Normalizer/normalize char java.text.Normalizer$Form/NFKC)]
     (not= char nfkc)))
 
+(defn non-character?
+  "Noncharacters are code points that are permanently reserved in the Unicode Standard for internal use.
+  Defined by https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-23/#G12612"
+  [cp]
+  (or (<= 0xFDD0 cp 0xFDEF)
+      (= (bit-and cp 0xFFFF) 0xFFFE)
+      (= (bit-and cp 0xFFFF) 0xFFFF)))
+
 (defn precis-ignorable?
   "PrecisIgnorableProperties (M): Default_Ignorable_Code_Point or Noncharacter_Code_Point"
   [derived-props cp]
   (or (contains? (get derived-props :default_ignorable_code_point #{}) cp)
-      ;; Noncharacters: U+FDD0..U+FDEF and U+xxFFFE, U+xxFFFF 
-      (<= 0xFDD0 cp 0xFDEF)
-      (= (bit-and cp 0xFFFF) 0xFFFE)
-      (= (bit-and cp 0xFFFF) 0xFFFF)
+      (non-character? cp)
       ;; Variation Selectors Supplement (should be DISALLOWED per IANA)
       (<= 0xE0100 cp 0xE01EF)))
 
@@ -311,9 +317,7 @@
   [unicode-data cp]
   (let [assigned? (contains? unicode-data cp)]
     (and (not assigned?)  ;; General_Category = "Cn" (implicit when not in Unicode data)
-         (not (or (<= 0xFDD0 cp 0xFDEF)           ;; Not a noncharacter
-                  (= (bit-and cp 0xFFFF) 0xFFFE)
-                  (= (bit-and cp 0xFFFF) 0xFFFF))))))
+         (not (non-character? cp)))))
 
 (defn derive-precis-property
   "Apply pure RFC 8264 PRECIS derivation algorithm as per Section 8
@@ -351,7 +355,6 @@
                (assoc! v cp (common/derive-precis-property unicode-data derived-props cp)))
         (persistent! v)))))
 
-;; IANA CSV processing functions
 (defn parse-codepoint-range-iana
   "Parse codepoint string, handling both ranges (0000-001F) and single points (0020)."
   [codepoint-str]
@@ -366,7 +369,7 @@
 (defn process-iana-csv-row
   "Process a single IANA CSV row into structured data."
   [[codepoint-str property description]]
-  (when-not (= codepoint-str "Codepoint") ; Skip header
+  (when-not (= codepoint-str "Codepoint")
     (let [range (parse-codepoint-range-iana codepoint-str)]
       {:codepoint-range range
        :property        property
@@ -378,7 +381,7 @@
   (->> (slurp filename)
        csv/read-csv
        (map process-iana-csv-row)
-       (filter some?))) ; Remove nil entries (header)
+       (filter some?)))
 
 (defn normalize-property-name
   "Normalize property names for comparison"
@@ -433,7 +436,7 @@
   (-> name
       str/upper-case
       (str/replace "<CONTROL>" "NULL")
-      (str/replace #"<UNASSIGNED-[0-9A-F]+>" "<RESERVED>")  ; Transform <UNASSIGNED-XXXX> to <RESERVED>
+      (str/replace #"<UNASSIGNED-[0-9A-F]+>" "<RESERVED>")
       (str/replace #"EXTENSION ([A-Z])>.." "EXTENSION $1, FIRST>..")
       (str/replace #"EXTENSION ([A-Z])>$" "EXTENSION $1, LAST>")
       (str/replace "IDEOGRAPH>.." "IDEOGRAPH, FIRST>..")
@@ -444,58 +447,49 @@
       (str/replace #"SURROGATE>$" "SURROGATE, LAST>")
       (str/replace "NONCHARACTER" "NOT A CHARACTER")))
 
+(defn codepoint-range-name
+  "Handles naming for assigned codepoints in the unicode data that use the First/Last range shortcut
+
+   Example:
+   AC00;<Hangul Syllable, First>;Lo;0;L;;;;;N;;;;;
+   D7A3;<Hangul Syllable, Last>;Lo;0;L;;;;;N;;;;;
+
+   every codepoint in between those has the name <Hangul Syllable>"
+
+  [cp]
+  (cond
+    (<= 0x3400 cp 0x4DBF)     "<CJK Ideograph Extension A>"
+    (<= 0x4E00 cp 0x9FFF)     "<CJK Ideograph>"
+    (<= 0xF900 cp 0xFAFF)     "<CJK Compatibility Ideograph>"
+    (<= 0x20000 cp 0x2A6DF)   "<CJK Ideograph Extension B>"
+    (<= 0x2A700 cp 0x2B73F)   "<CJK Ideograph Extension C>"
+    (<= 0x2B740 cp 0x2B81F)   "<CJK Ideograph Extension D>"
+    (<= 0x2B820 cp 0x2CEAF)   "<CJK Ideograph Extension E>"
+    (<= 0x2CEB0 cp 0x2EBEF)   "<CJK Ideograph Extension F>"
+    (<= 0x30000 cp 0x3134A)   "<CJK Ideograph Extension G>"
+    (<= 0x17000 cp 0x187F7)   "<Tangut Ideograph>"
+    (<= 0x18D00 cp 0x18D08)   "<Tangut Ideograph Supplement>"
+    (<= 0xAC00 cp 0xD7AF)     "<Hangul Syllable>"
+    (<= 0xD800 cp 0xDBFF)     "<Non Private Use High Surrogate>"
+    (<= 0xDC00 cp 0xDFFF)     "<Low Surrogate>"
+    (<= 0xE000 cp 0xF8FF)     "<Private Use>"
+    (<= 0xF0000 cp 0xFFFFD)   "<Plane 15 Private Use>"
+    (<= 0x100000 cp 0x10FFFD) "<Plane 16 Private Use>"
+    :else                     nil))
+
 (defn get-character-name
   "Get Unicode character name for a codepoint, using Unicode 1.0 name for control characters"
   [unicode-data cp]
   (let [name           (get-in unicode-data [cp :name])
         unicode10-name (get-in unicode-data [cp :unicode10-name])
         assigned?      (contains? unicode-data cp)]
-    ;; Use Unicode 1.0 name for control characters, fall back to regular name
     (if (and (= name "<control>") (not (str/blank? unicode10-name)))
       unicode10-name
       (or name
-          ;; Handle special ranges for ASSIGNED codepoints only
-          (when assigned?
-            (cond
-              ;; CJK Ideographs ranges
-              (<= 0x3400 cp 0x4DBF)   "<CJK Ideograph Extension A>"
-              (<= 0x4E00 cp 0x9FFF)   "<CJK Ideograph>"
-              (<= 0xF900 cp 0xFAFF)   "<CJK Compatibility Ideograph>"
-              (<= 0x20000 cp 0x2A6DF) "<CJK Ideograph Extension B>"
-              (<= 0x2A700 cp 0x2B73F) "<CJK Ideograph Extension C>"
-              (<= 0x2B740 cp 0x2B81F) "<CJK Ideograph Extension D>"
-              (<= 0x2B820 cp 0x2CEAF) "<CJK Ideograph Extension E>"
-              (<= 0x2CEB0 cp 0x2EBEF) "<CJK Ideograph Extension F>"
-              (<= 0x30000 cp 0x3134A) "<CJK Ideograph Extension G>"   ;; New in Unicode 13.0.0
-
-              ;; Tangut Ideographs
-              (<= 0x17000 cp 0x187F7) "<Tangut Ideograph>"
-              (<= 0x18800 cp 0x18AFF) "<Tangut Ideograph Supplement>" ;; New in Unicode 12.0.0
-              (<= 0x18D00 cp 0x18D08) "<Tangut Ideograph Supplement>" ;; Additional range
-
-              ;; Hangul Syllables
-              (<= 0xAC00 cp 0xD7AF) "<Hangul Syllable>"
-
-              ;; Surrogate ranges (High and Low)
-              (<= 0xD800 cp 0xDBFF) "<Non Private Use High Surrogate>"
-              (<= 0xDC00 cp 0xDFFF) "<Low Surrogate>"
-
-              ;; Private Use Areas
-              (<= 0xE000 cp 0xF8FF)     "<Private Use>"
-              (<= 0xF0000 cp 0xFFFFD)   "<Plane 15 Private Use>"
-              (<= 0x100000 cp 0x10FFFD) "<Plane 16 Private Use>"
-
-              ;; No algorithmic name applies for this assigned codepoint
-              :else nil))
-          ;; Special case for noncharacters (unassigned but should be "NOT A CHARACTER")
+          (when assigned? (codepoint-range-name cp))
           (cond
-            ;; Noncharacters: U+FDD0..U+FDEF and U+xxFFFE, U+xxFFFF
-            (or (<= 0xFDD0 cp 0xFDEF)
-                (= (bit-and cp 0xFFFF) 0xFFFE)
-                (= (bit-and cp 0xFFFF) 0xFFFF))
+            (non-character? cp)
             "<NONCHARACTER>"
-
-            ;; All other unassigned codepoints
             :else (format "<UNASSIGNED-%04X>" cp))))))
 
 (defn iana-range-description [unicode-data start end]
@@ -512,20 +506,21 @@
   (let [name      (get-in unicode-data [cp :name])
         assigned? (contains? unicode-data cp)]
     (cond
-      ;; Control characters
+      (codepoint-range-name cp)
+      (codepoint-range-name cp)
+
+      (nil? name)
+      (format "<UNASSIGNED-%04X>" cp)
+
       (= name "<control>") "<control>"
 
-      ;; Non-characters
-      (and assigned? (or (and (>= cp 0xFDD0) (<= cp 0xFDEF))
-                         (= (bit-and cp 0xFFFF) 0xFFFE)
-                         (= (bit-and cp 0xFFFF) 0xFFFF)))
+      (and assigned? (non-character? cp))
       "<noncharacter>"
 
-      ;; Unassigned/reserved
-      (not assigned?) "<reserved>"
+      (not assigned?)
+      "<reserved>"
 
-      ;; All others use regular name
-      :else (or name (format "<UNASSIGNED-%04X>" cp)))))
+      :else name)))
 
 (defn ucd-range-description
   "Get UCD-style range description for xmlrfc format"
