@@ -395,12 +395,12 @@ There are no changes made to Unicode between version 15.0.0 and 16.0.0 that impa
 
 Change in number of characters in each category:
 
-- PVALID changed from 140,020 to 144,716 (+4,696)
+- PVALID changed from 140,020 to 144,715 (+4,695)
 - UNASSIGNED changed from 819,467 to 814,664 (-4,803)
 - CONTEXTJ did not change, at 2
 - CONTEXTO did not change, at 25
 - DISALLOWED did not change, at 140,449
-- ID_DIS or FREE_PVAL changed from 14,149 to 14,256 (+107)
+- ID_DIS or FREE_PVAL changed from 14,149 to 14,257 (+108)
 - TOTAL did not change, at 1,114,112
 
 Code points that changed derived property value from other than UNASSIGNED: 0

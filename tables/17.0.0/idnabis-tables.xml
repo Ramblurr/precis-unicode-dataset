@@ -923,8 +923,7 @@
   <record><codepoint>A789-A78A</codepoint><property>FREE_PVAL</property><description>MODIFIER LETTER COLON..MODIFIER LETTER SHORT EQUALS SIGN</description></record>
   <record><codepoint>A78B-A7DC</codepoint><property>PVALID</property><description>LATIN CAPITAL LETTER SALTILLO..LATIN CAPITAL LETTER LAMBDA WITH STROKE</description></record>
   <record><codepoint>A7DD-A7F0</codepoint><property>UNASSIGNED</property><description>&lt;RESERVED&gt;..&lt;RESERVED&gt;</description></record>
-  <record><codepoint>A7F1</codepoint><property>PVALID</property><description>MODIFIER LETTER CAPITAL S</description></record>
-  <record><codepoint>A7F2-A7F4</codepoint><property>FREE_PVAL</property><description>MODIFIER LETTER CAPITAL C..MODIFIER LETTER CAPITAL Q</description></record>
+  <record><codepoint>A7F1-A7F4</codepoint><property>FREE_PVAL</property><description>MODIFIER LETTER CAPITAL S..MODIFIER LETTER CAPITAL Q</description></record>
   <record><codepoint>A7F5-A7F7</codepoint><property>PVALID</property><description>LATIN CAPITAL LETTER REVERSED HALF H..LATIN EPIGRAPHIC LETTER SIDEWAYS I</description></record>
   <record><codepoint>A7F8-A7F9</codepoint><property>FREE_PVAL</property><description>MODIFIER LETTER CAPITAL H WITH STROKE..MODIFIER LETTER SMALL LIGATURE OE</description></record>
   <record><codepoint>A7FA-A827</codepoint><property>PVALID</property><description>LATIN LETTER SMALL CAPITAL TURNED M..SYLOTI NAGRI VOWEL SIGN OO</description></record>

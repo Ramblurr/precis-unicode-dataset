@@ -1092,8 +1092,7 @@ A771-A788 PVALID/letter_digits
 A789-A78A FREE_PVAL/symbols
 A78B-A7DC PVALID/letter_digits
 A7DD-A7F0 UNASSIGNED/unassigned
-A7F1-A7F1 PVALID/letter_digits
-A7F2-A7F4 FREE_PVAL/has_compat
+A7F1-A7F4 FREE_PVAL/has_compat
 A7F5-A7F7 PVALID/letter_digits
 A7F8-A7F9 FREE_PVAL/has_compat
 A7FA-A827 PVALID/letter_digits
